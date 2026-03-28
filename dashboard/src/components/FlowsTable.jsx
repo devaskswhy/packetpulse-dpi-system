@@ -11,7 +11,9 @@ const formatBytes = (b) => {
 };
 
 export default function FlowsTable({ flows, compact = false }) {
-    if (!flows?.length) {
+    const safeFlows = Array.isArray(flows) ? flows : [];
+
+    if (safeFlows.length === 0) {
         return (
             <div className="table-panel">
                 <div className="panel-header">
@@ -24,7 +26,7 @@ export default function FlowsTable({ flows, compact = false }) {
         );
     }
 
-    const displayed = compact ? flows.slice(0, 6) : flows;
+    const displayed = compact ? safeFlows.slice(0, 6) : safeFlows;
 
     return (
         <div className="table-panel">
@@ -35,8 +37,8 @@ export default function FlowsTable({ flows, compact = false }) {
                     </div>
                     <div className="panel-subtitle">
                         {compact
-                            ? `Showing ${displayed.length} of ${flows.length} flows`
-                            : `${flows.length} active flows`}
+                            ? `Showing ${displayed.length} of ${safeFlows.length} flows`
+                            : `${safeFlows.length} active flows`}
                     </div>
                 </div>
                 <span
@@ -46,7 +48,7 @@ export default function FlowsTable({ flows, compact = false }) {
                         color: "var(--accent-cyan)",
                     }}
                 >
-                    {flows.length} total
+                    {safeFlows.length} total
                 </span>
             </div>
 

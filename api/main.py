@@ -5,8 +5,10 @@ Bridge between C++ packet analyzer and the frontend dashboard.
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import asyncio
 
-from routes import stats, flows, sni, ws
+from routes import stats, flows, alerts, ws
+from data_loader import data_manager
 
 app = FastAPI(
     title="PacketPulse DPI API",
@@ -15,11 +17,19 @@ app = FastAPI(
 )
 
 # ---------------------------------------------------------------------------
-# CORS — allow the frontend (dev & prod) to call the API
+# Background Task
+# ---------------------------------------------------------------------------
+@app.on_event("startup")
+async def startup_event():
+    # Start the continuous polling task
+    asyncio.create_task(data_manager.poll_loop())
+
+# ---------------------------------------------------------------------------
+# CORS
 # ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],            # tighten in production
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -30,15 +40,16 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 app.include_router(stats.router, prefix="/stats", tags=["Stats"])
 app.include_router(flows.router, prefix="/flows", tags=["Flows"])
-app.include_router(sni.router,   prefix="/sni",   tags=["SNI"])
-app.include_router(ws.router,    prefix="/ws",    tags=["WebSockets"])
+app.include_router(alerts.router, prefix="/alerts", tags=["Alerts"])
+app.include_router(ws.router, prefix="/ws", tags=["WebSockets"])
 
-
-@app.get("/", tags=["Health"])
+# ---------------------------------------------------------------------------
+# Health Check
+# ---------------------------------------------------------------------------
+@app.get("/health", tags=["Health"])
 async def health_check():
-    """Simple liveness probe."""
+    """System health mapping."""
     return {
-        "service": "packetpulse-api",
-        "status": "healthy",
-        "version": "0.1.0",
+        "status": "ok",
+        "source": data_manager.get_source()
     }

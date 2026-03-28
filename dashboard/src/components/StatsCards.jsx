@@ -22,46 +22,34 @@ export default function StatsCards({ stats }) {
     const cards = [
         {
             label: "Total Packets",
-            value: formatNumber(stats.total_packets),
-            sub: `${stats.packets_per_sec.toFixed(0)} pkt/s`,
+            value: formatNumber(stats.total_packets || 0),
+            sub: "Ingested",
             icon: "📦",
             accent: "cyan",
         },
         {
             label: "Total Traffic",
-            value: formatBytes(stats.total_bytes),
-            sub: `${(stats.capture_duration_sec / 60).toFixed(0)} min captured`,
+            value: formatBytes(stats.total_bytes || 0),
+            sub: "Captured payload",
             icon: "📡",
             accent: "violet",
         },
         {
-            label: "Active Flows",
-            value: stats.active_flows.toLocaleString(),
-            sub: "Currently tracked",
-            icon: "🔀",
-            accent: "emerald",
-        },
-        {
             label: "Blocked",
-            value: formatNumber(stats.blocked_packets),
-            sub: "Packets dropped",
+            value: formatNumber(stats.blocked_count || 0),
+            sub: "Security drops",
             icon: "🛡️",
             accent: "rose",
         },
         {
-            label: "TCP Packets",
-            value: formatNumber(stats.protocols.tcp),
-            sub: `${((stats.protocols.tcp / stats.total_packets) * 100).toFixed(1)}% of traffic`,
-            icon: "🔗",
-            accent: "blue",
-        },
-        {
-            label: "UDP Packets",
-            value: formatNumber(stats.protocols.udp),
-            sub: `${((stats.protocols.udp / stats.total_packets) * 100).toFixed(1)}% of traffic`,
-            icon: "⚡",
-            accent: "amber",
-        },
+            label: "Top Application",
+            value: stats.top_apps && Object.keys(stats.top_apps).length > 0
+                ? Object.keys(stats.top_apps)[0]
+                : "None",
+            sub: "Highest volume",
+            icon: "🔥",
+            accent: "emerald",
+        }
     ];
 
     return (

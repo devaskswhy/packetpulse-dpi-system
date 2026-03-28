@@ -9,10 +9,9 @@ import StatsCards from "../components/StatsCards";
 import TrafficChart from "../components/TrafficChart";
 import AppPieChart from "../components/AppPieChart";
 import FlowsTable from "../components/FlowsTable";
-import DomainTable from "../components/DomainTable";
 
 export default function DashboardPage() {
-    const { stats, flows, domains, loading } = useDPI();
+    const { stats, flows, loading } = useDPI();
 
     if (loading) {
         return (
@@ -33,8 +32,7 @@ export default function DashboardPage() {
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                <FlowsTable flows={flows} compact />
-                <DomainTable domains={domains} />
+                <FlowsTable flows={flows || []} compact />
             </div>
         </>
     );

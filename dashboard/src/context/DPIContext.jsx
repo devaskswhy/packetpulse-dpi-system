@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from "react";
-import { fetchStats, fetchFlows, fetchSNI } from "../api";
+import { fetchStats, fetchFlows, fetchAlerts, healthCheck } from "../api";
 
 const DPIContext = createContext(null);
 
@@ -10,39 +10,57 @@ export function useDPI() {
 export function DPIProvider({ children }) {
     const [stats, setStats] = useState(null);
     const [flows, setFlows] = useState([]);
-    const [domains, setDomains] = useState([]);
+    const [alerts, setAlerts] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [connectionStatus, setConnectionStatus] = useState("offline"); // live, polling, offline
     const wsRef = useRef(null);
+    const pollingRef = useRef(null);
 
-    // Initial load from REST
+    const pullData = async () => {
+        try {
+            const [statsRes, flowsRes, alertsRes] = await Promise.all([
+                fetchStats(),
+                fetchFlows({ limit: 500 }),
+                fetchAlerts(),
+            ]);
+            setStats(statsRes || null);
+            setFlows(flowsRes?.flows || []);
+            setAlerts(alertsRes || []);
+            setLoading(false);
+            return true;
+        } catch (err) {
+            console.error("Failed standard fetch:", err);
+            setLoading(false);
+            return false;
+        }
+    };
+
+    const startPolling = () => {
+        if (!pollingRef.current) {
+            setConnectionStatus((prev) => prev !== "live" ? "polling" : "live");
+            pollingRef.current = setInterval(async () => {
+                const success = await pullData();
+                if (!success) setConnectionStatus("offline");
+                else setConnectionStatus(prev => prev === "offline" ? "polling" : prev);
+            }, 3000);
+        }
+    };
+
+    const stopPolling = () => {
+        if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+        }
+    };
+
     useEffect(() => {
         let isMounted = true;
 
-        async function loadInitialData() {
-            try {
-                const [statsRes, flowsRes, sniRes] = await Promise.all([
-                    fetchStats(),
-                    fetchFlows({ limit: 50 }),
-                    fetchSNI({ limit: 50 }),
-                ]);
+        const init = async () => {
+            await pullData();
+            if (isMounted) connectWs();
+        };
 
-                if (isMounted) {
-                    setStats(statsRes.stats);
-                    setFlows(flowsRes.flows);
-                    setDomains(sniRes.domains);
-                    setLoading(false);
-                }
-            } catch (err) {
-                console.error("Failed initial fetch:", err);
-                if (isMounted) setLoading(false);
-            }
-        }
-
-        loadInitialData();
-
-        // Establish WebSocket connection
-        // Dynamically get host/port (e.g. localhost:8000) based on REST api base
-        // But for development simplicity, we use the known backend URL
         const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const wsUrl = `${wsProtocol}//localhost:8000/ws/live`;
 
@@ -50,31 +68,50 @@ export function DPIProvider({ children }) {
             const socket = new WebSocket(wsUrl);
             wsRef.current = socket;
 
+            socket.onopen = () => {
+                if (isMounted) {
+                    setConnectionStatus("live");
+                    stopPolling(); // Stop polling if WS is alive
+                }
+            };
+
             socket.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
                     if (data.stats) setStats(data.stats);
                     if (data.flows) setFlows(data.flows);
-                    if (data.domains) setDomains(data.domains);
+                    if (data.alerts) setAlerts(data.alerts);
                 } catch (e) {
                     console.error("WebSocket payload error:", e);
                 }
             };
 
             socket.onclose = () => {
-                console.log("WebSocket closed, attempting reconnect...");
-                // Reconnect strategy
-                setTimeout(() => {
-                    if (isMounted) connectWs();
-                }, 3000);
+                console.log("WebSocket closed, falling back to polling...");
+                if (isMounted) {
+                    setConnectionStatus("polling");
+                    startPolling();
+                    // Attempt WS reconnect slowly in background
+                    setTimeout(() => {
+                        if (isMounted && (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED)) {
+                            connectWs();
+                        }
+                    }, 5000);
+                }
+            };
+
+            socket.onerror = () => {
+                socket.close();
             };
         };
 
-        connectWs();
+        init();
 
         return () => {
             isMounted = false;
+            stopPolling();
             if (wsRef.current) {
+                wsRef.current.onclose = null; // Prevent reconnect loop on unmount
                 wsRef.current.close();
             }
         };
@@ -82,9 +119,10 @@ export function DPIProvider({ children }) {
 
     const value = {
         stats,
-        flows,
-        domains,
-        loading
+        flows: flows || [],
+        alerts: alerts || [],
+        loading,
+        connectionStatus
     };
 
     return (

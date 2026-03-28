@@ -2,6 +2,7 @@ import { Routes, Route, NavLink, useLocation } from "react-router-dom";
 import DashboardPage from "./pages/DashboardPage";
 import FlowsPage from "./pages/FlowsPage";
 import AlertsPage from "./pages/AlertsPage";
+import { useDPI } from "./context/DPIContext";
 
 const NAV_ITEMS = [
   { to: "/", icon: "📊", label: "Dashboard" },
@@ -18,6 +19,19 @@ const PAGE_TITLES = {
 export default function App() {
   const location = useLocation();
   const title = PAGE_TITLES[location.pathname] || "Dashboard";
+  const { connectionStatus } = useDPI();
+
+  const getStatusString = () => {
+    if (connectionStatus === "live") return "Engine Online (WS)";
+    if (connectionStatus === "polling") return "Engine Polling (REST)";
+    return "Engine Offline";
+  };
+
+  const getStatusColor = () => {
+    if (connectionStatus === "live") return "var(--success)";
+    if (connectionStatus === "polling") return "var(--warning)";
+    return "var(--danger)";
+  };
 
   return (
     <div className="app-layout">
@@ -49,8 +63,8 @@ export default function App() {
 
         <div className="sidebar-footer">
           <div className="status-badge">
-            <div className="status-dot" />
-            <span>Engine Online</span>
+            <div className="status-dot" style={{ backgroundColor: getStatusColor() }} />
+            <span>{getStatusString()}</span>
           </div>
         </div>
       </aside>
@@ -60,7 +74,7 @@ export default function App() {
         <header className="topbar">
           <h2>{title}</h2>
           <div className="topbar-actions">
-            <div className="live-indicator">LIVE</div>
+            <div className="live-indicator" style={{ display: connectionStatus === "live" ? "flex" : "none" }}>LIVE</div>
           </div>
         </header>
 

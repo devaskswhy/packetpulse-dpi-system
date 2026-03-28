@@ -58,9 +58,8 @@ export default function TrafficChart({ stats }) {
         for (let i = 0; i < 30; i++) {
             pts.push({
                 time: new Date(now - (30 - 1 - i) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-                TCP: 0,
-                UDP: 0,
-                Other: 0,
+                Packets: 0,
+                Blocked: 0,
             });
         }
         return pts;
@@ -77,21 +76,19 @@ export default function TrafficChart({ stats }) {
         }
 
         const prev = prevStatsRef.current;
-        const dpTCP = stats.protocols.tcp - prev.protocols.tcp;
-        const dpUDP = stats.protocols.udp - prev.protocols.udp;
-        const dpOther = stats.protocols.other - prev.protocols.other;
+        const dpPackets = stats.total_packets - prev.total_packets;
+        const dpBlocked = stats.blocked_count - prev.blocked_count;
 
         const now = new Date();
         const newPoint = {
             time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            TCP: dpTCP > 0 ? dpTCP : 0,
-            UDP: dpUDP > 0 ? dpUDP : 0,
-            Other: dpOther > 0 ? dpOther : 0,
+            Packets: dpPackets > 0 ? dpPackets : 0,
+            Blocked: dpBlocked > 0 ? dpBlocked : 0,
         };
 
         setData(prevData => {
             const next = [...prevData, newPoint];
-            if (next.length > 30) next.shift(); // keep sliding window of 30 pts
+            if (next.length > 30) next.shift();
             return next;
         });
 
@@ -104,7 +101,7 @@ export default function TrafficChart({ stats }) {
                 <div>
                     <div className="panel-title">Live Traffic Volume</div>
                     <div className="panel-subtitle">
-                        Protocol bandwidth · 1-sec real-time deltas
+                        Packet throughput · 1-sec real-time deltas
                     </div>
                 </div>
             </div>
@@ -115,17 +112,13 @@ export default function TrafficChart({ stats }) {
                     margin={{ top: 5, right: 10, left: -10, bottom: 0 }}
                 >
                     <defs>
-                        <linearGradient id="gradTCP" x1="0" y1="0" x2="0" y2="1">
+                        <linearGradient id="gradPackets" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0%" stopColor="#60a5fa" stopOpacity={0.35} />
                             <stop offset="100%" stopColor="#60a5fa" stopOpacity={0} />
                         </linearGradient>
-                        <linearGradient id="gradUDP" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#a78bfa" stopOpacity={0.35} />
-                            <stop offset="100%" stopColor="#a78bfa" stopOpacity={0} />
-                        </linearGradient>
-                        <linearGradient id="gradOther" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.25} />
-                            <stop offset="100%" stopColor="#22d3ee" stopOpacity={0} />
+                        <linearGradient id="gradBlocked" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#fb7185" stopOpacity={0.35} />
+                            <stop offset="100%" stopColor="#fb7185" stopOpacity={0} />
                         </linearGradient>
                     </defs>
                     <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" />
@@ -152,26 +145,18 @@ export default function TrafficChart({ stats }) {
                     />
                     <Area
                         type="monotone"
-                        dataKey="TCP"
+                        dataKey="Packets"
                         stroke="#60a5fa"
                         strokeWidth={2}
-                        fill="url(#gradTCP)"
+                        fill="url(#gradPackets)"
                         isAnimationActive={false}
                     />
                     <Area
                         type="monotone"
-                        dataKey="UDP"
-                        stroke="#a78bfa"
+                        dataKey="Blocked"
+                        stroke="#fb7185"
                         strokeWidth={2}
-                        fill="url(#gradUDP)"
-                        isAnimationActive={false}
-                    />
-                    <Area
-                        type="monotone"
-                        dataKey="Other"
-                        stroke="#22d3ee"
-                        strokeWidth={2}
-                        fill="url(#gradOther)"
+                        fill="url(#gradBlocked)"
                         isAnimationActive={false}
                     />
                 </AreaChart>

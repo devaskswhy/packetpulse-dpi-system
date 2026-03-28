@@ -19,22 +19,35 @@ using namespace DPI;
 
 namespace {
 
+inline std::string getCurrentISO8601() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t time = std::chrono::system_clock::to_time_t(now);
+    std::tm tm_buf;
+#ifdef _WIN32
+    gmtime_s(&tm_buf, &time);
+#else
+    gmtime_r(&time, &tm_buf);
+#endif
+    std::ostringstream ss;
+    ss << std::put_time(&tm_buf, "%Y-%m-%dT%H:%M:%SZ");
+    return ss.str();
+}
+
 struct Flow {
+    std::string timestamp;
     FiveTuple tuple;
     AppType app_type = AppType::UNKNOWN;
     std::string sni;
     uint64_t packets = 0;
     uint64_t bytes = 0;
     bool blocked = false;
-    uint64_t tcp_packets = 0;
-    uint64_t udp_packets = 0;
 };
 
 class BlockingRules {
 public:
     std::unordered_set<uint32_t> blocked_ips;
     std::unordered_set<AppType> blocked_apps;
-    std::vector<std::string> blocked_domains;  // Simple substring match
+    std::vector<std::string> blocked_domains;
 
     void blockIP(const std::string& ip) {
         uint32_t addr = parseIP(ip);
@@ -50,7 +63,6 @@ public:
                 return;
             }
         }
-        std::cerr << "[Rules] Unknown app: " << app << "\n";
     }
 
     void blockDomain(const std::string& domain) {
@@ -58,16 +70,15 @@ public:
         std::cout << "[Rules] Blocked domain: " << domain << "\n";
     }
 
-    bool isBlocked(uint32_t src_ip, AppType app, const std::string& sni) const {
-        if (blocked_ips.count(src_ip)) return true;
-        if (blocked_apps.count(app)) return true;
+    std::string isBlockedReason(uint32_t src_ip, AppType app, const std::string& sni) const {
+        if (blocked_ips.count(src_ip)) return "Blocked by Source IP";
+        if (blocked_apps.count(app)) return "Blocked by App Policy";
         for (const auto& dom : blocked_domains) {
-            if (sni.find(dom) != std::string::npos) return true;
+            if (sni.find(dom) != std::string::npos) return "Blocked by Domain Match";
         }
-        return false;
+        return "";
     }
 
-private:
     static uint32_t parseIP(const std::string& ip) {
         uint32_t result = 0;
         int octet = 0, shift = 0;
@@ -139,93 +150,59 @@ int main(int argc, char* argv[]) {
     std::cout << "║            Single-threaded DPI Engine (reference)            ║\n";
     std::cout << "╚══════════════════════════════════════════════════════════════╝\n\n";
 
-    // Open input
     PcapReader reader;
     if (!reader.open(input_file)) {
         return 1;
     }
 
-    // Open output
     std::ofstream output(output_file, std::ios::binary);
     if (!output.is_open()) {
         std::cerr << "Error: Cannot open output file\n";
         return 1;
     }
 
-    // Write PCAP header
     const auto& header = reader.getGlobalHeader();
     output.write(reinterpret_cast<const char*>(&header), sizeof(header));
 
     std::unordered_map<FiveTuple, Flow, FiveTupleHash> flows;
+    std::vector<DPI::AlertExport> generated_alerts;
 
     uint64_t total_packets = 0;
     uint64_t total_bytes = 0;
     uint64_t forwarded = 0;
     uint64_t dropped = 0;
-    uint64_t tcp_packets = 0;
-    uint64_t udp_packets = 0;
-    uint64_t other_packets = 0;
     std::unordered_map<AppType, uint64_t> app_stats;
 
     RawPacket raw;
     ParsedPacket parsed;
 
     auto start_time = std::chrono::steady_clock::now();
-    std::cout << "[DPI] Processing packets...\n";
+    std::string global_ts = getCurrentISO8601();
 
     while (reader.readNextPacket(raw)) {
         total_packets++;
         total_bytes += raw.data.size();
 
         if (!PacketParser::parse(raw, parsed)) {
-            other_packets++;
             continue;
         }
         if (!parsed.has_ip || (!parsed.has_tcp && !parsed.has_udp)) continue;
 
-        // Create five-tuple
         FiveTuple tuple;
-        auto parseIP = [](const std::string& ip) -> uint32_t {
-            uint32_t result = 0;
-            int octet = 0, shift = 0;
-            for (char c : ip) {
-                if (c == '.') {
-                    result |= (octet << shift);
-                    shift += 8;
-                    octet = 0;
-                } else if (c >= '0' && c <= '9') {
-                    octet = octet * 10 + (c - '0');
-                }
-            }
-            return result | (octet << shift);
-        };
-
-        tuple.src_ip = parseIP(parsed.src_ip);
-        tuple.dst_ip = parseIP(parsed.dest_ip);
+        tuple.src_ip = BlockingRules::parseIP(parsed.src_ip);
+        tuple.dst_ip = BlockingRules::parseIP(parsed.dest_ip);
         tuple.src_port = parsed.src_port;
         tuple.dst_port = parsed.dest_port;
         tuple.protocol = parsed.protocol;
 
-        // Get or create flow
         Flow& flow = flows[tuple];
         if (flow.packets == 0) {
             flow.tuple = tuple;
+            flow.timestamp = global_ts;
         }
         flow.packets++;
         flow.bytes += raw.data.size();
 
-        // Track protocol stats
-        if (parsed.protocol == 6) {
-            tcp_packets++;
-            flow.tcp_packets++;
-        } else if (parsed.protocol == 17) {
-            udp_packets++;
-            flow.udp_packets++;
-        } else {
-            other_packets++;
-        }
-
-        // Try SNI extraction - even for flows already marked as generic HTTPS
         if ((flow.app_type == AppType::UNKNOWN || flow.app_type == AppType::HTTPS) &&
             flow.sni.empty() && parsed.has_tcp && parsed.dest_port == 443) {
 
@@ -239,7 +216,7 @@ int main(int argc, char* argv[]) {
 
                 if (payload_offset < raw.data.size()) {
                     size_t payload_len = raw.data.size() - payload_offset;
-                    if (payload_len > 5) {  // Minimum TLS record header
+                    if (payload_len > 5) {
                         auto sni = SNIExtractor::extract(raw.data.data() + payload_offset, payload_len);
                         if (sni) {
                             flow.sni = *sni;
@@ -250,7 +227,6 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // HTTP Host extraction
         if ((flow.app_type == AppType::UNKNOWN || flow.app_type == AppType::HTTP) &&
             flow.sni.empty() && parsed.has_tcp && parsed.dest_port == 80) {
 
@@ -273,33 +249,32 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // DNS classification
         if (flow.app_type == AppType::UNKNOWN &&
             (parsed.dest_port == 53 || parsed.src_port == 53)) {
             flow.app_type = AppType::DNS;
         }
 
-        // Port-based fallback
         if (flow.app_type == AppType::UNKNOWN) {
             if (parsed.dest_port == 443) flow.app_type = AppType::HTTPS;
             else if (parsed.dest_port == 80) flow.app_type = AppType::HTTP;
         }
 
-        // Check blocking rules
         if (!flow.blocked) {
-            flow.blocked = rules.isBlocked(tuple.src_ip, flow.app_type, flow.sni);
-            if (flow.blocked) {
-                std::cout << "[BLOCKED] " << parsed.src_ip << " -> " << parsed.dest_ip
-                          << " (" << appTypeToString(flow.app_type);
-                if (!flow.sni.empty()) std::cout << ": " << flow.sni;
-                std::cout << ")\n";
+            std::string reason = rules.isBlockedReason(tuple.src_ip, flow.app_type, flow.sni);
+            if (!reason.empty()) {
+                flow.blocked = true;
+                
+                DPI::AlertExport alert;
+                alert.type = "blocked";
+                alert.ip = parsed.src_ip;
+                alert.reason = reason + " (" + (flow.sni.empty() ? appTypeToString(flow.app_type) : flow.sni) + ")";
+                alert.ts = global_ts;
+                generated_alerts.push_back(alert);
             }
         }
 
-        // Update app stats
         app_stats[flow.app_type]++;
 
-        // Forward or drop
         if (flow.blocked) {
             dropped++;
         } else {
@@ -317,107 +292,46 @@ int main(int argc, char* argv[]) {
     reader.close();
     output.close();
 
-    auto end_time = std::chrono::steady_clock::now();
-    double duration_sec = std::chrono::duration<double>(end_time - start_time).count();
-    double pps = (duration_sec > 0) ? total_packets / duration_sec : 0;
-
-    std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════════╗\n";
-    std::cout << "║                      PROCESSING REPORT                       ║\n";
-    std::cout << "╠══════════════════════════════════════════════════════════════╣\n";
-    std::cout << "║ Total Packets:      " << std::setw(10) << total_packets << "                             ║\n";
-    std::cout << "║ Forwarded:          " << std::setw(10) << forwarded << "                             ║\n";
-    std::cout << "║ Dropped:            " << std::setw(10) << dropped << "                             ║\n";
-    std::cout << "║ Active Flows:       " << std::setw(10) << flows.size() << "                             ║\n";
-    std::cout << "╠══════════════════════════════════════════════════════════════╣\n";
-    std::cout << "║                    APPLICATION BREAKDOWN                     ║\n";
-    std::cout << "╠══════════════════════════════════════════════════════════════╣\n";
-
-    std::vector<std::pair<AppType, uint64_t>> sorted_apps(app_stats.begin(), app_stats.end());
-    std::sort(sorted_apps.begin(), sorted_apps.end(),
-              [](const auto& a, const auto& b) { return a.second > b.second; });
-
-    for (const auto& [app, count] : sorted_apps) {
-        double pct = 100.0 * count / total_packets;
-        int bar_len = static_cast<int>(pct / 5);
-        std::string bar(bar_len, '#');
-
-        std::cout << "║ " << std::setw(15) << std::left << appTypeToString(app)
-                  << std::setw(8) << std::right << count
-                  << " " << std::setw(5) << std::fixed << std::setprecision(1) << pct << "% "
-                  << std::setw(20) << std::left << bar << "  ║\n";
-    }
-
-    std::cout << "╚══════════════════════════════════════════════════════════════╝\n";
-
-    std::cout << "\n[Detected Applications/Domains]\n";
-    std::unordered_map<std::string, AppType> unique_snis;
-    for (const auto& [tuple, flow] : flows) {
-        if (!flow.sni.empty()) {
-            unique_snis[flow.sni] = flow.app_type;
-        }
-    }
-    for (const auto& [sni, app] : unique_snis) {
-        std::cout << "  - " << sni << " -> " << appTypeToString(app) << "\n";
-    }
-
-    std::cout << "\nOutput written to: " << output_file << "\n";
-
-    // ---- JSON Export ----
     if (export_json) {
-        // Build stats
         DPI::StatsExport stats_exp{};
-        stats_exp.total_packets       = total_packets;
-        stats_exp.total_bytes         = total_bytes;
-        stats_exp.active_flows        = flows.size();
-        stats_exp.blocked_packets     = dropped;
-        stats_exp.tcp_packets         = tcp_packets;
-        stats_exp.udp_packets         = udp_packets;
-        stats_exp.other_packets       = other_packets;
-        stats_exp.capture_duration_sec = duration_sec;
-        stats_exp.packets_per_sec     = pps;
+        stats_exp.total_packets = total_packets;
+        stats_exp.total_bytes   = total_bytes;
+        stats_exp.blocked_count = dropped;
 
-        // Build flows
+        std::vector<std::pair<AppType, uint64_t>> sorted_apps(app_stats.begin(), app_stats.end());
+        std::sort(sorted_apps.begin(), sorted_apps.end(),
+                  [](const auto& a, const auto& b) { return a.second > b.second; });
+        
+        for (size_t i = 0; i < std::min<size_t>(5, sorted_apps.size()); i++) {
+            stats_exp.top_apps[appTypeToString(sorted_apps[i].first)] = sorted_apps[i].second;
+        }
+
         std::vector<DPI::FlowExport> flow_exports;
         flow_exports.reserve(flows.size());
         for (const auto& [tuple, flow] : flows) {
+            size_t fid = FiveTupleHash{}(tuple);
+            std::stringstream ss;
+            ss << std::hex << std::setfill('0') << std::setw(16) << fid;
+
             DPI::FlowExport fe{};
-            fe.src_ip   = tuple.src_ip;
-            fe.dst_ip   = tuple.dst_ip;
-            fe.src_port = tuple.src_port;
-            fe.dst_port = tuple.dst_port;
-            fe.protocol = tuple.protocol;
-            fe.app_type = flow.app_type;
-            fe.packets  = flow.packets;
-            fe.bytes    = flow.bytes;
-            fe.blocked  = flow.blocked;
+            fe.timestamp = flow.timestamp;
+            fe.src_ip    = tuple.src_ip;
+            fe.dst_ip    = tuple.dst_ip;
+            fe.src_port  = tuple.src_port;
+            fe.dst_port  = tuple.dst_port;
+            fe.protocol  = tuple.protocol;
+            fe.app_type  = flow.app_type;
+            fe.sni       = flow.sni;
+            fe.bytes     = flow.bytes;
+            fe.blocked   = flow.blocked;
+            fe.flow_id   = ss.str();
             flow_exports.push_back(fe);
         }
 
-        // Build domains — aggregate by SNI
-        struct DomAgg { AppType app; uint64_t flow_count; uint64_t total_bytes; bool blocked; };
-        std::unordered_map<std::string, DomAgg> dom_map;
-        for (const auto& [tuple, flow] : flows) {
-            if (flow.sni.empty()) continue;
-            auto& d = dom_map[flow.sni];
-            d.app = flow.app_type;
-            d.flow_count++;
-            d.total_bytes += flow.bytes;
-            if (flow.blocked) d.blocked = true;
-        }
-        std::vector<DPI::DomainExport> domain_exports;
-        domain_exports.reserve(dom_map.size());
-        for (const auto& [domain, agg] : dom_map) {
-            domain_exports.push_back({domain, agg.app, agg.flow_count, agg.total_bytes, agg.blocked});
-        }
-
-        if (DPI::exportToJSON(json_output_path, stats_exp, flow_exports, domain_exports)) {
-            std::cout << "[JSON] Exported analysis results to: " << json_output_path << "\n";
-        } else {
-            std::cerr << "[JSON] ERROR: Failed to write " << json_output_path << "\n";
+        if (DPI::exportToJSON(json_output_path, stats_exp, flow_exports, generated_alerts)) {
+            std::cout << "[JSON] Exported exact schema atomically to: " << json_output_path << "\n";
         }
     }
 
     return 0;
 }
-

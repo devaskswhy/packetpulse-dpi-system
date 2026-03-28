@@ -26,7 +26,7 @@ const COLORS = [
 ];
 
 function buildAppData(flows) {
-    if (!flows?.length) return [];
+    if (!Array.isArray(flows) || flows.length === 0) return [];
 
     const map = {};
     flows.forEach((f) => {
