@@ -1,0 +1,2 @@
+# PacketPulse Kafka Debug Consumer dependencies
+confluent-kafka==2.3.0

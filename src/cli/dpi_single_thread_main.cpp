@@ -1,4 +1,9 @@
 // Single-threaded DPI Engine CLI - reference implementation
+//
+// Kafka integration: after building each flow's JSON string, the flow is
+// produced to "raw_packets" keyed by flow_id. If Kafka is unavailable the
+// --json file export still works as a fallback.
+
 #include <iostream>
 #include <fstream>
 #include <unordered_map>
@@ -7,12 +12,20 @@
 #include <unordered_set>
 #include <algorithm>
 #include <chrono>
+#include <sstream>
+#include <cstdlib>
 
 #include "pcap_reader.h"
 #include "packet_parser.h"
 #include "sni_extractor.h"
 #include "types.h"
 #include "json_exporter.h"
+
+// Kafka support — conditionally compiled when ENABLE_KAFKA is defined.
+// The CMakeLists.txt for the DPI engine sets this when librdkafka is found.
+#ifdef ENABLE_KAFKA
+#include "../packet_service/kafka_producer.h"
+#endif
 
 using namespace PacketAnalyzer;
 using namespace DPI;
@@ -95,6 +108,29 @@ public:
     }
 };
 
+// Build a single-flow JSON string (used for both Kafka and file export)
+std::string flowToJsonString(const Flow& flow, const FiveTuple& tuple,
+                              const std::string& flow_id) {
+    std::string proto = (tuple.protocol == 6) ? "TCP"
+                      : (tuple.protocol == 17) ? "UDP" : "OTHER";
+
+    std::ostringstream j;
+    j << "{"
+      << "\"timestamp\":\"" << jsonEscape(flow.timestamp) << "\","
+      << "\"src_ip\":\"" << ipToString(tuple.src_ip) << "\","
+      << "\"dst_ip\":\"" << ipToString(tuple.dst_ip) << "\","
+      << "\"src_port\":" << tuple.src_port << ","
+      << "\"dst_port\":" << tuple.dst_port << ","
+      << "\"protocol\":\"" << proto << "\","
+      << "\"app\":\"" << jsonEscape(appTypeToString(flow.app_type)) << "\","
+      << "\"sni\":" << (flow.sni.empty() ? "null" : "\"" + jsonEscape(flow.sni) + "\"") << ","
+      << "\"bytes\":" << flow.bytes << ","
+      << "\"blocked\":" << (flow.blocked ? "true" : "false") << ","
+      << "\"flow_id\":\"" << jsonEscape(flow_id) << "\""
+      << "}";
+    return j.str();
+}
+
 void printUsage(const char* prog) {
     std::cout << R"(
 Single-threaded DPI Engine
@@ -107,9 +143,12 @@ Options:
   --block-app <app>      Block application (YouTube, Facebook, etc.)
   --block-domain <dom>   Block domain (substring match)
   --json <path>          Export results as JSON (default: output.json)
+  --kafka <brokers>      Produce flow events to Kafka (default: localhost:9092)
+  --no-kafka             Disable Kafka even if compiled with ENABLE_KAFKA
 
 Example:
   )" << prog << R"( capture.pcap filtered.pcap --block-app YouTube --json output.json
+  )" << prog << R"( capture.pcap filtered.pcap --kafka localhost:9092
 )";
 }
 
@@ -128,6 +167,11 @@ int main(int argc, char* argv[]) {
     std::string json_output_path = "output.json";   // default
     bool export_json = false;
 
+    // Kafka settings
+    std::string kafka_brokers = "localhost:9092";
+    bool use_kafka = false;
+    bool no_kafka  = false;
+
     // Parse options
     for (int i = 3; i < argc; i++) {
         std::string arg = argv[i];
@@ -142,6 +186,13 @@ int main(int argc, char* argv[]) {
             if (i + 1 < argc && argv[i + 1][0] != '-') {
                 json_output_path = argv[++i];
             }
+        } else if (arg == "--kafka") {
+            use_kafka = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                kafka_brokers = argv[++i];
+            }
+        } else if (arg == "--no-kafka") {
+            no_kafka = true;
         }
     }
 
@@ -149,6 +200,34 @@ int main(int argc, char* argv[]) {
     std::cout << "╔══════════════════════════════════════════════════════════════╗\n";
     std::cout << "║            Single-threaded DPI Engine (reference)            ║\n";
     std::cout << "╚══════════════════════════════════════════════════════════════╝\n\n";
+
+    // ---- Kafka producer (optional) ----------------------------------------
+#ifdef ENABLE_KAFKA
+    std::unique_ptr<PacketService::KafkaProducer> kafka_producer;
+    bool kafka_available = false;
+
+    if (use_kafka && !no_kafka) {
+        kafka_producer = std::make_unique<PacketService::KafkaProducer>();
+        PacketService::KafkaConfig kcfg;
+        kcfg.brokers = kafka_brokers;
+        kcfg.topic   = "raw_packets";
+
+        if (kafka_producer->init(kcfg)) {
+            kafka_available = true;
+            std::cout << "[Kafka] Producer connected to " << kafka_brokers << "\n";
+        } else {
+            std::cerr << "[Kafka] WARNING: Could not initialize producer — "
+                      << "falling back to --json file output only\n";
+            kafka_producer.reset();
+        }
+    }
+#else
+    bool kafka_available = false;
+    if (use_kafka && !no_kafka) {
+        std::cerr << "[Kafka] WARNING: Binary compiled without ENABLE_KAFKA — "
+                  << "Kafka disabled. Rebuild with librdkafka to enable.\n";
+    }
+#endif
 
     PcapReader reader;
     if (!reader.open(input_file)) {
@@ -292,6 +371,37 @@ int main(int argc, char* argv[]) {
     reader.close();
     output.close();
 
+    // ---- Produce flows to Kafka -------------------------------------------
+#ifdef ENABLE_KAFKA
+    uint64_t kafka_sent = 0;
+    uint64_t kafka_fail = 0;
+
+    if (kafka_available && kafka_producer) {
+        std::cout << "[Kafka] Publishing " << flows.size() << " flow records to raw_packets...\n";
+
+        for (const auto& [tuple, flow] : flows) {
+            // Compute flow_id (same logic as JSON export)
+            size_t fid = FiveTupleHash{}(tuple);
+            std::stringstream ss;
+            ss << std::hex << std::setfill('0') << std::setw(16) << fid;
+            std::string flow_id = ss.str();
+
+            std::string json_str = flowToJsonString(flow, tuple, flow_id);
+
+            if (kafka_producer->produce("raw_packets", flow_id, json_str)) {
+                kafka_sent++;
+            } else {
+                kafka_fail++;
+            }
+        }
+
+        kafka_producer->flush(10000);
+        std::cout << "[Kafka] Published: sent=" << kafka_sent
+                  << " failed=" << kafka_fail << "\n";
+    }
+#endif
+
+    // ---- JSON file export (always available as fallback) -------------------
     if (export_json) {
         DPI::StatsExport stats_exp{};
         stats_exp.total_packets = total_packets;

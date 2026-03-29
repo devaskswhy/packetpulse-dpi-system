@@ -8,11 +8,14 @@
 //   - Asynchronous delivery with delivery-report callback
 //   - Configurable batching, compression, and queue limits
 //   - Thread-safe: multiple threads can call produce() concurrently
+//   - Supports keyed messages for partition-affinity by flow_id
 // ============================================================================
 
 #include <string>
 #include <string_view>
 #include <atomic>
+#include <unordered_map>
+#include <mutex>
 #include <librdkafka/rdkafka.h>
 
 namespace PacketService {
@@ -41,8 +44,14 @@ public:
     // Returns true on success.
     bool init(const KafkaConfig& config);
 
-    // Produce a JSON message to the configured topic.
+    // Produce a keyed message to an arbitrary topic.
     // Thread-safe. Returns true if the message was enqueued.
+    bool produce(const std::string& topic,
+                 const std::string& key,
+                 const std::string& json_string);
+
+    // Produce a JSON message to the default configured topic (no key).
+    // Backward-compatible overload.
     bool produce(std::string_view payload);
 
     // Flush outstanding messages (blocks up to timeout_ms).
@@ -53,11 +62,18 @@ public:
     uint64_t messagesFailed() const { return messages_failed_.load(std::memory_order_relaxed); }
 
 private:
-    rd_kafka_t*       producer_ = nullptr;
-    rd_kafka_topic_t* topic_    = nullptr;
+    rd_kafka_t*       producer_       = nullptr;
+    rd_kafka_topic_t* default_topic_  = nullptr;
+
+    // Cache for dynamically-created topic handles (keyed by topic name)
+    std::unordered_map<std::string, rd_kafka_topic_t*> topic_cache_;
+    std::mutex topic_cache_mutex_;
 
     std::atomic<uint64_t> messages_sent_{0};
     std::atomic<uint64_t> messages_failed_{0};
+
+    // Resolve or create a topic handle by name
+    rd_kafka_topic_t* getOrCreateTopic(const std::string& topic_name);
 
     // librdkafka delivery report callback (static, invoked per message)
     static void deliveryReportCallback(

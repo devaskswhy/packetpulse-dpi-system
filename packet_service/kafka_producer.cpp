@@ -3,6 +3,10 @@
 //
 // High-throughput configuration with async delivery reports.
 // Thread-safe: rd_kafka_produce is internally serialized by librdkafka.
+//
+// Two produce() overloads:
+//   1) produce(topic, key, json_string) — keyed, arbitrary topic
+//   2) produce(payload)                 — default topic, no key (legacy)
 // ============================================================================
 
 #include "kafka_producer.h"
@@ -22,7 +26,10 @@ void KafkaProducer::deliveryReportCallback(
 {
     auto* self = static_cast<KafkaProducer*>(opaque);
     if (rkmessage->err) {
-        LOG_ERROR("Kafka delivery failed: %s", rd_kafka_err2str(rkmessage->err));
+        fprintf(stderr, "[KafkaProducer] Delivery FAILED: %s (topic=%s, partition=%d)\n",
+                rd_kafka_err2str(rkmessage->err),
+                rd_kafka_topic_name(rkmessage->rkt),
+                rkmessage->partition);
         self->messages_failed_.fetch_add(1, std::memory_order_relaxed);
     } else {
         self->messages_sent_.fetch_add(1, std::memory_order_relaxed);
@@ -41,9 +48,17 @@ KafkaProducer::~KafkaProducer() {
         LOG_INFO("Flushing Kafka producer...");
         rd_kafka_flush(producer_, 10000);
 
-        if (topic_) {
-            rd_kafka_topic_destroy(topic_);
-            topic_ = nullptr;
+        // Destroy cached topic handles
+        for (auto& [name, handle] : topic_cache_) {
+            if (handle) {
+                rd_kafka_topic_destroy(handle);
+            }
+        }
+        topic_cache_.clear();
+
+        if (default_topic_) {
+            rd_kafka_topic_destroy(default_topic_);
+            default_topic_ = nullptr;
         }
 
         rd_kafka_destroy(producer_);
@@ -125,16 +140,16 @@ bool KafkaProducer::init(const KafkaConfig& config) {
     }
     // conf is now owned by producer_
 
-    // --- Create topic -------------------------------------------------------
+    // --- Create default topic -----------------------------------------------
     rd_kafka_topic_conf_t* topic_conf = rd_kafka_topic_conf_new();
-    topic_ = rd_kafka_topic_new(producer_, config.topic.c_str(), topic_conf);
-    if (!topic_) {
+    default_topic_ = rd_kafka_topic_new(producer_, config.topic.c_str(), topic_conf);
+    if (!default_topic_) {
         LOG_ERROR("Failed to create Kafka topic '%s': %s",
                   config.topic.c_str(),
                   rd_kafka_err2str(rd_kafka_last_error()));
         return false;
     }
-    // topic_conf is now owned by topic_
+    // topic_conf is now owned by default_topic_
 
     LOG_INFO("Kafka producer initialized — brokers=%s topic=%s compression=%s",
              config.brokers.c_str(), config.topic.c_str(), config.compression.c_str());
@@ -142,17 +157,95 @@ bool KafkaProducer::init(const KafkaConfig& config) {
 }
 
 // ---------------------------------------------------------------------------
-// Produce
+// Topic handle cache (for the multi-topic overload)
+// ---------------------------------------------------------------------------
+
+rd_kafka_topic_t* KafkaProducer::getOrCreateTopic(const std::string& topic_name) {
+    std::lock_guard<std::mutex> lock(topic_cache_mutex_);
+    auto it = topic_cache_.find(topic_name);
+    if (it != topic_cache_.end()) {
+        return it->second;
+    }
+
+    rd_kafka_topic_conf_t* tc = rd_kafka_topic_conf_new();
+    rd_kafka_topic_t* rkt = rd_kafka_topic_new(producer_, topic_name.c_str(), tc);
+    if (!rkt) {
+        LOG_ERROR("Failed to create topic handle '%s': %s",
+                  topic_name.c_str(),
+                  rd_kafka_err2str(rd_kafka_last_error()));
+        return nullptr;
+    }
+    topic_cache_[topic_name] = rkt;
+    return rkt;
+}
+
+// ---------------------------------------------------------------------------
+// Produce — keyed message to arbitrary topic
+// ---------------------------------------------------------------------------
+
+bool KafkaProducer::produce(const std::string& topic,
+                            const std::string& key,
+                            const std::string& json_string) {
+    if (!producer_) {
+        LOG_ERROR("Kafka producer not initialized");
+        return false;
+    }
+
+    rd_kafka_topic_t* rkt = getOrCreateTopic(topic);
+    if (!rkt) {
+        return false;
+    }
+
+    int result = rd_kafka_produce(
+        rkt,
+        RD_KAFKA_PARTITION_UA,          // Automatic partitioning (uses key hash)
+        RD_KAFKA_MSG_F_COPY,            // Copy payload into librdkafka buffer
+        const_cast<char*>(json_string.data()),
+        json_string.size(),
+        key.data(), key.size(),          // Message key for partition affinity
+        nullptr                          // No per-message opaque
+    );
+
+    if (result == -1) {
+        rd_kafka_resp_err_t err = rd_kafka_last_error();
+        if (err == RD_KAFKA_RESP_ERR__QUEUE_FULL) {
+            // Back-pressure: poll to make room, then retry once
+            rd_kafka_poll(producer_, 100);
+            result = rd_kafka_produce(
+                rkt,
+                RD_KAFKA_PARTITION_UA,
+                RD_KAFKA_MSG_F_COPY,
+                const_cast<char*>(json_string.data()),
+                json_string.size(),
+                key.data(), key.size(),
+                nullptr
+            );
+        }
+        if (result == -1) {
+            fprintf(stderr, "[KafkaProducer] produce() failed for topic '%s': %s\n",
+                    topic.c_str(), rd_kafka_err2str(rd_kafka_last_error()));
+            messages_failed_.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+    }
+
+    // Serve delivery reports (non-blocking)
+    rd_kafka_poll(producer_, 0);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Produce — legacy overload (default topic, no key)
 // ---------------------------------------------------------------------------
 
 bool KafkaProducer::produce(std::string_view payload) {
-    if (!producer_ || !topic_) {
+    if (!producer_ || !default_topic_) {
         LOG_ERROR("Kafka producer not initialized");
         return false;
     }
 
     int result = rd_kafka_produce(
-        topic_,
+        default_topic_,
         RD_KAFKA_PARTITION_UA,          // Automatic partitioning
         RD_KAFKA_MSG_F_COPY,            // Copy payload into librdkafka buffer
         const_cast<char*>(payload.data()),
@@ -167,7 +260,7 @@ bool KafkaProducer::produce(std::string_view payload) {
             // Back-pressure: poll to make room, then retry once
             rd_kafka_poll(producer_, 100);
             result = rd_kafka_produce(
-                topic_,
+                default_topic_,
                 RD_KAFKA_PARTITION_UA,
                 RD_KAFKA_MSG_F_COPY,
                 const_cast<char*>(payload.data()),
@@ -177,8 +270,8 @@ bool KafkaProducer::produce(std::string_view payload) {
             );
         }
         if (result == -1) {
-            LOG_ERROR("Kafka produce failed: %s",
-                      rd_kafka_err2str(rd_kafka_last_error()));
+            fprintf(stderr, "[KafkaProducer] produce() failed: %s\n",
+                    rd_kafka_err2str(rd_kafka_last_error()));
             messages_failed_.fetch_add(1, std::memory_order_relaxed);
             return false;
         }
