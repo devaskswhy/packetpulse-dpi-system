@@ -69,16 +69,13 @@ public:
             if (*p == '/' || *p == '\\') basename = p + 1;
         }
 
-        // Thread-safe write to stderr
-        std::lock_guard<std::mutex> lock(mutex_);
-        fprintf(stderr, "[%s.%03d] [%s] [%s:%d] %s\n",
+        // JSON output format to stdout
+        fprintf(stdout, "{\"ts\":\"%s.%03dZ\",\"level\":\"%s\",\"service\":\"packet_service\",\"msg\":\"%s\"}\n",
                 time_str,
                 static_cast<int>(ms.count()),
                 levelToString(level),
-                basename,
-                line,
                 msg_buf);
-        fflush(stderr);
+        fflush(stdout);
     }
 
 private:
@@ -92,10 +89,10 @@ private:
     static const char* levelToString(LogLevel level) {
         switch (level) {
             case LogLevel::DEBUG: return "DEBUG";
-            case LogLevel::INFO:  return "INFO ";
-            case LogLevel::WARN:  return "WARN ";
+            case LogLevel::INFO:  return "INFO";
+            case LogLevel::WARN:  return "WARN";
             case LogLevel::ERROR: return "ERROR";
-            default:              return "?????";
+            default:              return "UNKNOWN";
         }
     }
 };

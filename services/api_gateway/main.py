@@ -3,12 +3,15 @@ PacketPulse DPI — FastAPI Backend
 Bridge between C++ packet analyzer and the frontend dashboard.
 """
 
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 
 from routes import stats, flows, alerts, ws
 from data_loader import data_manager
+
+logger = logging.getLogger("api_gateway")
 
 app = FastAPI(
     title="PacketPulse DPI API",
@@ -21,6 +24,7 @@ app = FastAPI(
 # ---------------------------------------------------------------------------
 @app.on_event("startup")
 async def startup_event():
+    logger.info("Starting api_gateway service")
     # Start the continuous polling task
     asyncio.create_task(data_manager.poll_loop())
 

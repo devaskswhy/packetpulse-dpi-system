@@ -8,6 +8,7 @@
 
 #include "capture_engine.h"
 #include "logger.h"
+#include "health_server.h"
 
 #include <csignal>
 #include <cstdlib>
@@ -23,11 +24,15 @@ using namespace PacketService;
 // Global engine pointer for signal handler access
 // ---------------------------------------------------------------------------
 static CaptureEngine* g_engine = nullptr;
+static HealthServer* g_health_server = nullptr;
 
 static void signalHandler(int sig) {
     LOG_INFO("Received signal %d — initiating shutdown...", sig);
     if (g_engine) {
         g_engine->runningFlag().store(false, std::memory_order_release);
+    }
+    if (g_health_server) {
+        g_health_server->stop();
     }
 }
 
@@ -52,25 +57,29 @@ static void printUsage(const char* prog) {
 }
 
 // ---------------------------------------------------------------------------
-// Parse CLI arguments
+// Parse Env/CLI arguments
 // ---------------------------------------------------------------------------
-static EngineConfig parseArgs(int argc, char* argv[]) {
+static EngineConfig parseConfig(int argc, char* argv[]) {
     EngineConfig config;
+    
+    // Environment defaults
+    const char* env_brokers = std::getenv("KAFKA_BOOTSTRAP_SERVERS");
+    const char* env_topic = std::getenv("KAFKA_TOPIC");
+    const char* env_iface = std::getenv("NETWORK_INTERFACE");
+    
+    if (env_brokers) config.kafka.brokers = env_brokers;
+    if (env_topic) config.kafka.topic = env_topic;
+    if (env_iface) config.interface = env_iface;
 
+    // CLI overrides
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             printUsage(argv[0]);
             exit(0);
         }
-        else if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
-            config.interface = argv[++i];
-        }
-        else if (strcmp(argv[i], "-b") == 0 && i + 1 < argc) {
-            config.kafka.brokers = argv[++i];
-        }
-        else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
-            config.kafka.topic = argv[++i];
-        }
+        else if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) config.interface = argv[++i];
+        else if (strcmp(argv[i], "-b") == 0 && i + 1 < argc) config.kafka.brokers = argv[++i];
+        else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) config.kafka.topic = argv[++i];
         else if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
             config.producer_threads = std::atoi(argv[++i]);
             if (config.producer_threads < 1) config.producer_threads = 1;
@@ -79,26 +88,6 @@ static EngineConfig parseArgs(int argc, char* argv[]) {
         else if (strcmp(argv[i], "-q") == 0 && i + 1 < argc) {
             config.queue_capacity = static_cast<size_t>(std::atol(argv[++i]));
             if (config.queue_capacity < 1000) config.queue_capacity = 1000;
-        }
-        else if (strcmp(argv[i], "-l") == 0 && i + 1 < argc) {
-            const char* level = argv[++i];
-            if (strcmp(level, "debug") == 0)
-                Logger::instance().setLevel(LogLevel::DEBUG);
-            else if (strcmp(level, "info") == 0)
-                Logger::instance().setLevel(LogLevel::INFO);
-            else if (strcmp(level, "warn") == 0)
-                Logger::instance().setLevel(LogLevel::WARN);
-            else if (strcmp(level, "error") == 0)
-                Logger::instance().setLevel(LogLevel::ERROR);
-            else {
-                fprintf(stderr, "Unknown log level: %s\n", level);
-                exit(1);
-            }
-        }
-        else {
-            fprintf(stderr, "Unknown option: %s\n", argv[i]);
-            printUsage(argv[0]);
-            exit(1);
         }
     }
 
@@ -111,7 +100,7 @@ static EngineConfig parseArgs(int argc, char* argv[]) {
 int main(int argc, char* argv[]) {
     LOG_INFO("=== PacketPulse Capture Service ===");
 
-    EngineConfig config = parseArgs(argc, argv);
+    EngineConfig config = parseConfig(argc, argv);
 
     LOG_INFO("Configuration:");
     LOG_INFO("  Interface:        %s", config.interface.c_str());
@@ -123,6 +112,9 @@ int main(int argc, char* argv[]) {
     // --- Initialize engine --------------------------------------------------
     CaptureEngine engine;
     g_engine = &engine;
+    
+    HealthServer health_server;
+    g_health_server = &health_server;
 
     if (!engine.init(config)) {
         LOG_ERROR("Failed to initialize capture engine — exiting");
@@ -138,8 +130,9 @@ int main(int argc, char* argv[]) {
     sigaction(SIGINT,  &sa, nullptr);
     sigaction(SIGTERM, &sa, nullptr);
 
-    // --- Start pipeline ----------------------------------------------------
+    // --- Start pipeline & Server -------------------------------------------
     LOG_INFO("Starting capture pipeline...");
+    health_server.start(8001);
     engine.start();
 
     // --- Periodic stats reporting ------------------------------------------

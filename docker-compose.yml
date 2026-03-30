@@ -106,6 +106,61 @@ services:
         kafka-topics --bootstrap-server $$BROKER --list
     restart: "no"
 
+  # --------------------------------------------------------------------------
+  # Microservices
+  # --------------------------------------------------------------------------
+  packet_service:
+    build: ./services/packet_service
+    container_name: packetpulse-packet-service
+    depends_on:
+      kafka:
+        condition: service_healthy
+    network_mode: host # Needs to sniff host interface, maybe? 
+    # Or just default Docker network depending on OS but let's stick to standard port mapping
+    ports:
+      - "8001:8001"
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=localhost:9092 # Assuming host networking OR map it correctly 
+      # Actually if it runs in docker network, it should be kafka:29092
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+    restart: always
+
+  processing_service:
+    build: ./services/processing_service
+    container_name: packetpulse-processing-service
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8002:8002"
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+    restart: always
+
+  detection_service:
+    build: ./services/detection_service
+    container_name: packetpulse-detection-service
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8003:8003"
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+    restart: always
+
+  api_gateway:
+    build: ./services/api_gateway
+    container_name: packetpulse-api-gateway
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+    restart: always
+
 volumes:
   zookeeper-data:
   zookeeper-log:
