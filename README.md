@@ -1,8 +1,8 @@
 # PacketPulse DPI System 🚀
 
-A production-grade, event-driven Deep Packet Inspection platform with 
-real-time flow tracking, intelligent threat detection (rule engine + ML anomaly detection), 
-built with C++, Python microservices, Apache Kafka, Redis, and a live React dashboard.
+A production-grade, event-driven Deep Packet Inspection platform with persistent 
+storage, real-time flow tracking, and intelligent threat detection, built with C++, 
+Python microservices, Apache Kafka, Redis, PostgreSQL, and a live React dashboard.
 
 ## 🏗️ Architecture
 
@@ -35,7 +35,7 @@ built with C++, Python microservices, Apache Kafka, Redis, and a live React dash
 | Detection | Python 3.12 + scikit-learn | Rule engine + ML anomaly detection |
 | ML / Detection | scikit-learn IsolationForest | Unsupervised anomaly detection, DDoS patterns |
 | API Gateway | FastAPI + Uvicorn + WebSockets | REST API + real-time streaming |
-| Persistent DB | PostgreSQL 16 + SQLAlchemy | Long-term flow & alert storage |
+| Database | PostgreSQL 16 + SQLAlchemy 2.0 (async) + Alembic | Persistent flows, alerts, stats history |
 | Frontend | React + Vite + Recharts | Live dashboard |
 | Cache / Rate Limiter | Redis 7.2 | Active flow cache, rate limiting, stats TTL |
 | Orchestration | Docker Compose | Local development |
@@ -81,10 +81,11 @@ Packet_analyzer-main/
 │   │   ├── rule_engine.py    # RuleEngine — IP/domain/port/rate blocking
 │   │   ├── ml_engine.py      # AnomalyDetector — IsolationForest
 │   │   └── models/           # Saved model: isolation_forest.pkl
-│   ├── db/                   # Shared database library
-│   │   ├── models.py         # SQLAlchemy 2.0 schema
-│   │   ├── crud.py           # Async DB operations
-│   │   └── migrations/       # Alembic version history
+│   ├── db/                       # Shared DB library
+│   │   ├── models.py             # SQLAlchemy models: Flow, Alert, Stats
+│   │   ├── session.py            # Async engine + get_session()
+│   │   ├── crud.py               # upsert_flow, insert_alert, insert_stats, get_flows
+│   │   └── migrations/           # Alembic migrations
 ├── docker-compose.yml      # Kafka + Zookeeper + Redis + Postgres
 ├── start.py               # Unified launcher
 └── kafka_consumer_debug.py # Debug consumer for raw_packets
@@ -114,6 +115,53 @@ Packet_analyzer-main/
 - Rate limiting: O(log N) per request using sorted sets
 - Stats endpoint: 5s TTL cache eliminates redundant aggregation
 
+## 🗄️ Database Schema
+
+Three core tables managed via Alembic migrations:
+
+**flows**
+| Column | Type | Description |
+|---|---|---|
+| id | Serial PK | Auto increment |
+| flow_id | VARCHAR UNIQUE | SHA256 of 5-tuple |
+| src_ip / dst_ip | VARCHAR | IP addresses |
+| src_port / dst_port | INTEGER | Port numbers |
+| protocol | VARCHAR | TCP / UDP / OTHER |
+| app | VARCHAR | Detected application |
+| sni | VARCHAR | TLS SNI hostname |
+| bytes / packets | BIGINT | Traffic counters |
+| first_seen / last_seen | TIMESTAMPTZ | Flow timestamps |
+| duration_s | FLOAT | Flow duration |
+| blocked | BOOLEAN | Blocked flag |
+
+**alerts**
+| Column | Type | Description |
+|---|---|---|
+| id | Serial PK | Auto increment |
+| alert_id | VARCHAR UNIQUE | UUID4 |
+| type | VARCHAR | Alert category |
+| severity | VARCHAR | low/medium/high/critical |
+| flow_id | VARCHAR | Related flow |
+| src_ip / dst_ip | VARCHAR | IP addresses |
+| reason | TEXT | Human readable reason |
+| ts | TIMESTAMPTZ | Alert timestamp |
+
+**stats**
+| Column | Type | Description |
+|---|---|---|
+| id | Serial PK | Auto increment |
+| ts | TIMESTAMPTZ | Snapshot timestamp |
+| total_packets | BIGINT | Cumulative packets |
+| total_bytes | BIGINT | Cumulative bytes |
+| blocked_count | INTEGER | Total blocked flows |
+| top_apps | JSONB | App → bytes mapping |
+
+### Running Migrations
+```bash
+cd services/db
+alembic upgrade head
+```
+
 ## 🔌 API Endpoints
 
 | Method | Endpoint | Description |
@@ -121,7 +169,8 @@ Packet_analyzer-main/
 | GET | /flows | Paginated flow list |
 | GET | /flows/{flow_id} | Single flow lookup (Redis) |
 | GET | /stats | Aggregated statistics |
-| GET | /alerts | Security alerts |
+| GET | /alerts | Paginated alerts from DB |
+| GET | /stats/history | Last 24h stats grouped by hour (from DB) |
 | GET | /rules | Get current detection rules |
 | POST | /rules | Update detection rules |
 | GET | /health | System health check |
