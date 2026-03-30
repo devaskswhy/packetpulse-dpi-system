@@ -48,9 +48,12 @@ def main():
         sys.exit(1)
         
     logger.info("Launching FastAPI Backend...")
+    services_dir = os.path.dirname(api_dir)
+    api_env = {**os.environ, "PYTHONPATH": services_dir}
     api_proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"],
         cwd=api_dir,
+        env=api_env,
         stdout=sys.stdout,
         stderr=sys.stderr
     )

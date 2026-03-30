@@ -1,8 +1,10 @@
+from fastapi import APIRouter, Query
+from pydantic import BaseModel
+from typing import List, Optional
 from data_loader import data_manager
 from db.session import AsyncSessionLocal
 from sqlalchemy import select
 from db.models import Alert
-from fastapi import Query
 import datetime
 
 router = APIRouter()
