@@ -42,9 +42,9 @@ def main():
     logger.info("Starting PacketPulse Unified System...")
 
     # 1. Start FastAPI Backend
-    api_dir = os.path.join(os.getcwd(), "api")
+    api_dir = os.path.join(os.getcwd(), "services", "api_gateway")
     if not os.path.exists(api_dir):
-        logger.error(f"API directory not found at {api_dir}. Run script from project root.")
+        logger.error(f"API directory (services/api_gateway) not found at {api_dir}. Run script from project root.")
         sys.exit(1)
         
     logger.info("Launching FastAPI Backend...")
