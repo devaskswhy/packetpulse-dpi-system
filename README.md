@@ -1,8 +1,8 @@
 # PacketPulse DPI System 🚀
 
 A production-grade, event-driven Deep Packet Inspection platform with 
-real-time flow tracking, built with C++, Python microservices, Apache Kafka, 
-and a live React dashboard.
+real-time flow tracking, intelligent threat detection (rule engine + ML anomaly detection), 
+built with C++, Python microservices, Apache Kafka, Redis, and a live React dashboard.
 
 ## 🏗️ Architecture
 
@@ -33,6 +33,7 @@ and a live React dashboard.
 | Message Broker | Apache Kafka 7.6 + Zookeeper | Event-driven backbone |
 | Processing | Python 3.12 + confluent-kafka | Flow aggregation, 5-tuple tracking |
 | Detection | Python 3.12 + scikit-learn | Rule engine + ML anomaly detection |
+| ML / Detection | scikit-learn IsolationForest | Unsupervised anomaly detection, DDoS patterns |
 | API Gateway | FastAPI + Uvicorn + WebSockets | REST API + real-time streaming |
 | Frontend | React + Vite + Recharts | Live dashboard |
 | Cache / Rate Limiter | Redis 7.2 | Active flow cache, rate limiting, stats TTL |
@@ -74,7 +75,10 @@ Packet_analyzer-main/
 │   │   ├── stats.py          # Top apps, bytes aggregation
 │   │   └── cache.py          # RedisCache — store/get flows, TTL=300s
 │   ├── detection_service/
-│   │   └── rate_limiter.py   # Sliding window rate limiter via Redis
+│   │   ├── main.py           # Consumer loop — rules + ML pipeline
+│   │   ├── rule_engine.py    # RuleEngine — IP/domain/port/rate blocking
+│   │   ├── ml_engine.py      # AnomalyDetector — IsolationForest
+│   │   └── models/           # Saved model: isolation_forest.pkl
 ├── docker-compose.yml      # Kafka + Zookeeper + infra
 ├── start.py               # Unified launcher
 └── kafka_consumer_debug.py # Debug consumer for raw_packets
@@ -112,6 +116,8 @@ Packet_analyzer-main/
 | GET | /flows/{flow_id} | Single flow lookup (Redis) |
 | GET | /stats | Aggregated statistics |
 | GET | /alerts | Security alerts |
+| GET | /rules | Get current detection rules |
+| POST | /rules | Update detection rules |
 | GET | /health | System health check |
 | WS | /ws/live | Real-time WebSocket stream |
 
@@ -141,6 +147,53 @@ flows using 5-tuple keys (src_ip, dst_ip, src_port, dst_port, protocol).
 - Flows inactive for 30s are flushed to `processed_packets` topic
 - Stats (top apps, unique IPs, blocked ratio) published every 10s to `flow_stats`
 
+## 🛡️ Detection Engine
+
+PacketPulse uses a two-layer detection pipeline on every processed flow:
+
+### Layer 1 — Rule Engine
+Fast, deterministic checks loaded from Redis (`rules:config`), refreshed every 60s:
+
+| Rule Type | Example | Severity |
+|---|---|---|
+| Blocked IP | src_ip in blocklist | Critical |
+| Blocked Domain | sni matches `*.malware.com` | High |
+| Blocked Port | dst_port in [4444, 6667] | High |
+| Rate Limit | >1000 packets/min from single IP | Medium |
+
+### Layer 2 — ML Anomaly Detection
+Unsupervised **IsolationForest** model trained on live traffic:
+
+- **Features**: bytes, packets, duration_s, dst_port, protocol
+- **Training data**: last 10,000 flows (stored in Redis)
+- **Auto-retrains**: every 1 hour in background thread
+- **Threshold**: anomaly score < -0.3 triggers alert
+- **Cold start**: ML checks skipped until model is trained (no false positives)
+
+### Alert Schema
+```json
+{
+  "alert_id": "uuid4",
+  "type": "blocked_ip | blocked_domain | rate_limit | anomaly",
+  "severity": "low | medium | high | critical",
+  "flow_id": "...",
+  "src_ip": "1.2.3.4",
+  "reason": "IP matched blocklist entry",
+  "ts": "2026-01-01T00:00:00Z"
+}
+```
+
+### Managing Rules
+```bash
+# Add blocked IP
+curl -X POST http://localhost:8000/rules \
+  -H "Content-Type: application/json" \
+  -d '{"blocked_ips": ["1.2.3.4"], "blocked_domains": ["*.ads.com"]}'
+
+# View current rules  
+curl http://localhost:8000/rules
+```
+
 ## 📊 Current System Status
 
 - ✅ Phase 1: System Stabilized
@@ -148,7 +201,7 @@ flows using 5-tuple keys (src_ip, dst_ip, src_port, dst_port, protocol).
 - ✅ Phase 3: Microservices Architecture
 - ✅ Phase 4: Flow Tracking & Aggregation
 - ✅ Phase 5: Redis Caching & Rate Limiting
-- ⏳ Phase 6: ML Detection Engine
+- ✅ Phase 6: Intelligent Detection Engine (Rules + ML)
 - ⏳ Phase 7: PostgreSQL Database
 - ⏳ Phase 8: Production API
 - ⏳ Phase 9: Real-time UI

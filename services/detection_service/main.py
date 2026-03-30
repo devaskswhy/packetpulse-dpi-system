@@ -2,50 +2,23 @@ import os
 import json
 import time
 import logging
-from datetime import datetime
-from collections import deque, defaultdict
 import threading
 from confluent_kafka import Consumer, Producer
 from fastapi import FastAPI
 import uvicorn
 import asyncio
 from rate_limiter import RateLimiter
+from rule_engine import RuleEngine
+from ml_engine import MLEngine
+from config import setup_logger, KAFKA_BROKERS, IN_TOPIC, OUT_TOPIC, REDIS_HOST, REDIS_PORT, HEALTH_PORT
 
-# Custom JSON Formatter
-class JSONFormatter(logging.Formatter):
-    def format(self, record):
-        log_record = {
-            "ts": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
-            "level": record.levelname,
-            "service": "detection_service",
-            "msg": record.getMessage()
-        }
-        return json.dumps(log_record)
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("detection_service")
-# Clear existing handlers
-for h in logger.handlers[:]:
-    logger.removeHandler(h)
-handler = logging.StreamHandler()
-handler.setFormatter(JSONFormatter())
-logger.addHandler(handler)
-logger.propagate = False
-
-# Config from env
-KAFKA_BROKERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-IN_TOPIC = os.getenv("KAFKA_TOPIC_IN", "processed_packets")
-OUT_TOPIC = os.getenv("KAFKA_TOPIC_OUT", "alerts")
-HEALTH_PORT = int(os.getenv("HEALTH_PORT", "8003"))
+logger = setup_logger("detection_main")
 
 app = FastAPI(title="Detection Service Health")
 
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "detection_service"}
-
-BLOCKED_IPS = {"192.168.1.100", "10.0.0.99"} # Example blocked IPs
-RATE_LIMIT_PPS = 1000 # packets per second threshold
 
 def delivery_report(err, msg):
     if err:
@@ -64,9 +37,6 @@ def run_detector():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
-    redis_host = os.getenv("REDIS_HOST", "localhost")
-    redis_port = int(os.getenv("REDIS_PORT", "6379"))
-    
     while True:
         try:
             consumer = Consumer(consumer_conf)
@@ -79,11 +49,17 @@ def run_detector():
             time.sleep(2)
 
     rate_limiter = RateLimiter(
-        redis_host=redis_host, 
-        redis_port=redis_port, 
+        redis_host=REDIS_HOST, 
+        redis_port=REDIS_PORT, 
         producer=producer, 
         alert_topic=OUT_TOPIC
     )
+    
+    rule_engine = RuleEngine(rate_limiter)
+    ml_engine = MLEngine()
+    
+    # Start the rule engine background refresh
+    loop.create_task(rule_engine.start_refresh_loop())
 
     logger.info("Started detection loop")
     
@@ -96,29 +72,11 @@ def run_detector():
             try:
                 flow = json.loads(msg.value().decode('utf-8'))
                 
-                src = flow.get("src_ip")
-                dst = flow.get("dst_ip")
-                total_pkts = flow.get("packets_fw", 0) + flow.get("packets_bw", 0)
-                duration = flow.get("duration", 0)
+                # Check deterministic rules
+                alerts = loop.run_until_complete(rule_engine.check(flow))
                 
-                alerts = []
-                
-                # Rule 1: Blocked IP
-                if src in BLOCKED_IPS or dst in BLOCKED_IPS:
-                    offender = src if src in BLOCKED_IPS else dst
-                    alerts.append({
-                        "alert_type": "Blocked_IP_Access",
-                        "severity": "CRITICAL",
-                        "message": f"Connection to/from known blocked IP: {offender}",
-                        "flow_id": flow.get("flow_id", "unknown"),
-                        "timestamp": datetime.utcnow().isoformat() + "Z"
-                    })
-                
-                # Rule 2: Rate limit via Redis
-                # Check SRC ip
-                loop.run_until_complete(rate_limiter.is_rate_limited(src, window_s=60, max_packets=1000))
-                # Check DST ip (optional but thorough)
-                loop.run_until_complete(rate_limiter.is_rate_limited(dst, window_s=60, max_packets=1000))
+                # Check ML models (stubbed)
+                alerts.extend(ml_engine.check(flow))
                 
                 for alert in alerts:
                     producer.produce(
@@ -126,7 +84,7 @@ def run_detector():
                         value=json.dumps(alert),
                         callback=delivery_report
                     )
-                    logger.info(f"Generated alert: {alert['alert_type']} for {alert['flow_id']}")
+                    logger.info(f"Generated alert: {alert.get('type', alert.get('alert_type'))} for {alert.get('flow_id', 'unknown')}")
                     
             except Exception as e:
                 logger.error(f"Decoding flow failed: {e}")
@@ -138,6 +96,7 @@ def run_detector():
     finally:
         consumer.close()
         producer.flush()
+        loop.run_until_complete(rule_engine.stop())
         loop.run_until_complete(rate_limiter.close())
         loop.close()
 
