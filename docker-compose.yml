@@ -94,11 +94,18 @@ services:
           --partitions 4 \
           --replication-factor 1
 
-        echo '[3/3] Creating topic: alerts (partitions=2)'
+        echo '[3/4] Creating topic: alerts (partitions=2)'
         kafka-topics --bootstrap-server $$BROKER \
           --create --if-not-exists \
           --topic alerts \
           --partitions 2 \
+          --replication-factor 1
+
+        echo '[4/4] Creating topic: flow_stats (partitions=1)'
+        kafka-topics --bootstrap-server $$BROKER \
+          --create --if-not-exists \
+          --topic flow_stats \
+          --partitions 1 \
           --replication-factor 1
 
         echo ''
