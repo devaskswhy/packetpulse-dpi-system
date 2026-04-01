@@ -34,7 +34,7 @@ Python microservices, Apache Kafka, Redis, PostgreSQL, and a live React dashboar
 | Processing | Python 3.12 + confluent-kafka | Flow aggregation, 5-tuple tracking |
 | Detection | Python 3.12 + scikit-learn | Rule engine + ML anomaly detection |
 | ML / Detection | scikit-learn IsolationForest | Unsupervised anomaly detection, DDoS patterns |
-| API Gateway | FastAPI + Uvicorn + WebSockets | REST API + real-time streaming |
+| API Gateway | FastAPI + slowapi + Redis auth | REST + WebSocket, pagination, rate limiting, API key auth |
 | Database | PostgreSQL 16 + SQLAlchemy 2.0 (async) + Alembic | Persistent flows, alerts, stats history |
 | Frontend | React + Vite + Recharts | Live dashboard |
 | Cache / Rate Limiter | Redis 7.2 | Active flow cache, rate limiting, stats TTL |
@@ -162,19 +162,70 @@ cd services/db
 alembic upgrade head
 ```
 
+## 🔐 API Security & Rate Limiting
+
+### Authentication
+All endpoints (except `/health`) require an API key via header:
+```bash
+curl http://localhost:8000/flows \
+  -H "X-API-Key: your_api_key_here"
+```
+
+Managing API keys (requires ADMIN_SECRET env var):
+```bash
+# Add a new API key
+curl -X POST http://localhost:8000/admin/keys \
+  -H "X-Admin-Secret: your_admin_secret" \
+  -d '{"key": "new_api_key_123"}'
+```
+
+### Rate Limiting
+- **100 requests/minute** per IP (via slowapi)
+- Exceeding limit returns `429 Too Many Requests`
+
+### Pagination
+All list endpoints support pagination:
+```
+GET /flows?page=1&limit=50&src_ip=1.2.3.4&app=YouTube&blocked=true
+GET /alerts?page=1&limit=50&severity=high&type=anomaly
+```
+
+Response envelope:
+```json
+{
+  "data": [...],
+  "total": 1500,
+  "page": 1,
+  "limit": 50,
+  "pages": 30
+}
+```
+
+### Filtering Options
+**Flows:** src_ip, dst_ip, app, protocol, blocked, start, end
+**Alerts:** type, severity, start, end
+
 ## 🔌 API Endpoints
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | /flows | Paginated flow list |
-| GET | /flows/{flow_id} | Single flow lookup (Redis) |
-| GET | /stats | Aggregated statistics |
-| GET | /alerts | Paginated alerts from DB |
-| GET | /stats/history | Last 24h stats grouped by hour (from DB) |
-| GET | /rules | Get current detection rules |
-| POST | /rules | Update detection rules |
-| GET | /health | System health check |
-| WS | /ws/live | Real-time WebSocket stream |
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| GET | /health | ❌ | System health check |
+| GET | /flows | ✅ | Paginated flows (DB + Redis) |
+| GET | /flows/{flow_id} | ✅ | Single flow lookup |
+| GET | /stats | ✅ | Aggregated stats (cached 5s) |
+| GET | /stats/history | ✅ | 24h stats history |
+| GET | /alerts | ✅ | Paginated alerts from DB |
+| GET | /rules | ✅ | Current detection rules |
+| POST | /rules | ✅ | Update detection rules |
+| POST | /admin/keys | ✅ | Add API key (admin only) |
+| WS | /ws/live | ✅ | Real-time WebSocket stream |
+
+### WebSocket Events
+```json
+{ "type": "stats",        "data": { ... } }         // Every 2s
+{ "type": "alert",        "data": { ... } }         // Immediate on alert
+{ "type": "flows_update", "count": 42 }             // On flow flush
+```
 
 ## 🔄 Flow Tracking
 
@@ -258,7 +309,7 @@ curl http://localhost:8000/rules
 - ✅ Phase 5: Redis Caching & Rate Limiting
 - ✅ Phase 6: Intelligent Detection Engine (Rules + ML)
 - ✅ Phase 7: PostgreSQL Persistent Storage
-- ⏳ Phase 8: Production API Integration
+- ✅ Phase 8: Production-Grade API Gateway
 - ⏳ Phase 9: Real-time UI Enhancements
 - ⏳ Phase 10: Full Multi-Stage Dockerization
 - ⏳ Phase 11: Kubernetes Deployment (Helm)

@@ -70,8 +70,14 @@ async def get_flows(
     if filters:
         if filters.get("src_ip"):
             query = query.where(Flow.src_ip == filters["src_ip"])
+        if filters.get("dst_ip"):
+            query = query.where(Flow.dst_ip == filters["dst_ip"])
         if filters.get("app"):
             query = query.where(Flow.app == filters["app"])
+        if filters.get("protocol"):
+            query = query.where(Flow.protocol == filters["protocol"])
+        if filters.get("blocked") is not None:
+            query = query.where(Flow.blocked == filters["blocked"])
         if filters.get("start_time"):
             query = query.where(Flow.last_seen >= filters["start_time"])
         if filters.get("end_time"):
