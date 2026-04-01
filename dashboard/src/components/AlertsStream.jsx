@@ -20,7 +20,7 @@ export default function AlertsStream({ limit = 20, showHeader = true }) {
   if (limit) alerts = alerts.slice(0, limit);
 
   return (
-    <div className={`bg-gray-800 border border-gray-700 rounded-xl ${showHeader ? 'p-4 md:p-6 w-full flex flex-col h-[400px]' : 'p-2 w-full flex flex-col h-full'}`}>
+    <div className={`bg-[#111827] border border-[#1e293b] rounded-xl ${showHeader ? 'p-4 md:p-6 w-full flex flex-col h-[400px]' : 'p-2 w-full flex flex-col h-full'}`}>
       {showHeader && (
         <div className="mb-4 flex-shrink-0">
           <h3 className="text-sm font-bold text-[#e2e8f0]">Live Alerts Stream</h3>
@@ -29,10 +29,7 @@ export default function AlertsStream({ limit = 20, showHeader = true }) {
       )}
       <div className="flex-1 overflow-y-auto pr-2 space-y-3 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-[#334155] [&::-webkit-scrollbar-thumb]:rounded">
         {alerts.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-gray-400 text-sm">
-            <div className="w-6 h-6 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin mb-3"></div>
-            Waiting for alerts...
-          </div>
+          <div className="h-full flex items-center justify-center text-[#94a3b8] text-sm">No alerts detected...</div>
         ) : (
           alerts.map((alert, i) => (
             <div key={alert.alert_id || i} className={`border-l-4 ${SEVERITY_COLORS[alert.severity?.toLowerCase()]?.split(' ')[0] || 'border-gray-500'} bg-[#1a2236] p-3 rounded-r-lg flex gap-3 shadow-sm`}>

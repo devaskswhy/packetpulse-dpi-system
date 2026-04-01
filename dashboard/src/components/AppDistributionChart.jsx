@@ -6,7 +6,7 @@ const COLORS = ['#22d3ee', '#a78bfa', '#34d399', '#fbbf24', '#fb7185', '#60a5fa'
 export default function AppDistributionChart() {
   const stats = useAppStore(state => state.stats);
   
-  const data = stats?.top_apps && typeof stats.top_apps === 'object' && !Array.isArray(stats.top_apps)
+  const data = stats?.top_apps 
     ? Object.entries(stats.top_apps)
         .map(([name, bytes]) => ({ name, value: bytes }))
         .sort((a, b) => b.value - a.value)
@@ -14,7 +14,7 @@ export default function AppDistributionChart() {
     : [];
 
   return (
-    <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 md:p-6 w-full h-[400px]">
+    <div className="bg-[#111827] border border-[#1e293b] rounded-xl p-4 md:p-6 w-full h-[400px]">
       <div className="mb-2">
         <h3 className="text-sm font-bold text-[#e2e8f0]">Top Applications</h3>
         <p className="text-xs text-[#94a3b8]">By volume (bytes)</p>
@@ -44,10 +44,7 @@ export default function AppDistributionChart() {
             <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px', color: '#94a3b8' }}/>
           </PieChart>
         ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center text-sm text-gray-400">
-            <div className="w-6 h-6 border-2 border-gray-600 border-t-emerald-500 rounded-full animate-spin mb-3"></div>
-            Waiting for app data...
-          </div>
+          <div className="w-full h-full flex items-center justify-center text-sm text-[#94a3b8]">No data available</div>
         )}
       </ResponsiveContainer>
     </div>

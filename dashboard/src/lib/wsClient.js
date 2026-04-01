@@ -33,7 +33,6 @@ const connectWS = () => {
     try {
       const msg = JSON.parse(event.data);
       if (msg.type === 'stats') {
-        console.log('[WS] Received stats snapshot:', msg.data);
         setStats(msg.data);
       } else if (msg.type === 'alert') {
         prependAlerts([msg.data]);

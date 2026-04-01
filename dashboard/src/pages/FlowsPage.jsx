@@ -1,79 +1,53 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import FlowTable from '../components/FlowTable';
-import { useAppStore } from '../store/useAppStore';
-import { usePollerFallback } from '../lib/poller';
-import { Filter, AlertCircle } from 'lucide-react';
+/**
+ * FlowsPage — Full flows table with filter controls.
+ * Uses global real-time DPIContext.
+ */
 
-const API_BASE = 'http://localhost:8000';
+import { useState } from "react";
+import { useDPI } from "../context/DPIContext";
+import FlowsTable from "../components/FlowsTable";
+
+const FILTERS = ["All", "Allowed", "Blocked"];
 
 export default function FlowsPage() {
-  usePollerFallback();
-  const apiKey = useAppStore(state => state.apiKey);
-  const [appFilter, setAppFilter] = useState('');
-  const [protocolFilter, setProtocolFilter] = useState('');
-  const [blockedOnly, setBlockedOnly] = useState(false);
+    const { flows, loading } = useDPI();
+    const [activeFilter, setActiveFilter] = useState("All");
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['flows', apiKey, appFilter, protocolFilter, blockedOnly],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      params.append('limit', '500'); 
-      if (appFilter) params.append('app', appFilter);
-      if (protocolFilter) params.append('protocol', protocolFilter);
-      if (blockedOnly) params.append('blocked', 'true');
+    if (loading) {
+        return (
+            <div className="loading-container">
+                <div className="spinner" />
+                <span className="loading-text">Loading flows…</span>
+            </div>
+        );
+    }
 
-      const res = await fetch(`${API_BASE}/flows?${params.toString()}`, {
-        headers: { 'X-API-Key': apiKey }
-      });
-      if (!res.ok) throw new Error('Failed to fetch flows');
-      return res.json();
-    },
-    refetchInterval: 10000 
-  });
+    const filteredFlows = flows.filter(f => {
+        if (activeFilter === "Blocked") return f.blocked === true;
+        if (activeFilter === "Allowed") return f.blocked === false;
+        return true;
+    });
 
-  return (
-    <div className="flex flex-col gap-6">
-      <div className="bg-[#111827] border border-[#1e293b] rounded-xl p-4 flex flex-col sm:flex-row gap-4 justify-between items-center shadow-sm">
-        <div className="flex items-center gap-2 text-[#e2e8f0] font-semibold text-sm">
-          <Filter className="w-4 h-4 text-[#94a3b8]" /> Filters
-        </div>
-        <div className="flex flex-wrap gap-3 items-center">
-          <input 
-            type="text" 
-            placeholder="App (e.g., YouTube)" 
-            value={appFilter}
-            onChange={(e) => setAppFilter(e.target.value)}
-            className="bg-[#1e293b] border border-[#334155] rounded-md px-3 py-1.5 text-xs text-[#e2e8f0] placeholder-[#64748b] focus:outline-none focus:border-[#22d3ee] w-36"
-          />
-          <select 
-            value={protocolFilter}
-            onChange={(e) => setProtocolFilter(e.target.value)}
-            className="bg-[#1e293b] border border-[#334155] rounded-md px-3 py-1.5 text-xs text-[#e2e8f0] focus:outline-none focus:border-[#22d3ee]"
-          >
-            <option value="">All Protocols</option>
-            <option value="TCP">TCP</option>
-            <option value="UDP">UDP</option>
-          </select>
-          <label className="flex items-center gap-2 text-xs text-[#e2e8f0] cursor-pointer bg-[#1e293b] border border-[#334155] rounded-md px-3 py-1.5 select-none hover:bg-[#334155] transition-colors">
-            <input 
-              type="checkbox" 
-              checked={blockedOnly}
-              onChange={(e) => setBlockedOnly(e.target.checked)}
-              className="accent-red-500 w-3 h-3 cursor-pointer"
-            />
-            Blocked Only
-          </label>
-        </div>
-      </div>
+    return (
+        <>
+            <div className="page-header">
+                <h2>Network Flows</h2>
+                <p>All tracked connections from the DPI engine's flow table</p>
+            </div>
 
-      {error ? (
-        <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-4 rounded-xl flex items-center gap-3 text-sm">
-          <AlertCircle className="w-5 h-5" /> Error loading flows: {error.message}
-        </div>
-      ) : (
-        <FlowTable flowsData={data?.data} isLoading={isLoading} />
-      )}
-    </div>
-  );
+            <div className="filter-bar">
+                {FILTERS.map((f) => (
+                    <button
+                        key={f}
+                        className={`filter-btn${activeFilter === f ? " active" : ""}`}
+                        onClick={() => setActiveFilter(f)}
+                    >
+                        {f}
+                    </button>
+                ))}
+            </div>
+
+            <FlowsTable flows={filteredFlows} />
+        </>
+    );
 }
