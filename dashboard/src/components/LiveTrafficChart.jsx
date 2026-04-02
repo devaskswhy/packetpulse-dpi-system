@@ -13,7 +13,7 @@ export default function LiveTrafficChart() {
           <p className="text-xs text-[#94a3b8]">Real-time bytes and packets per second</p>
         </div>
       </div>
-      <ResponsiveContainer width="100%" height="85%">
+      <ResponsiveContainer width="100%" height="85%" style={{marginTop: '12px'}}>
         <AreaChart data={chartData}>
           <defs>
             <linearGradient id="colorBytes" x1="0" y1="0" x2="0" y2="1">
