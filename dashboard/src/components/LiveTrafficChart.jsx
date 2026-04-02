@@ -7,7 +7,7 @@ export default function LiveTrafficChart() {
 
   return (
     <div className="bg-[#111827] border border-[#1e293b] rounded-xl p-4 md:p-6 w-full h-[400px]">
-      <div className="flex justify-between mb-4">
+      <div className="flex justify-between mb-6">
         <div>
           <h3 className="text-sm font-bold text-[#e2e8f0]">Live Traffic</h3>
           <p className="text-xs text-[#94a3b8]">Real-time bytes and packets per second</p>
