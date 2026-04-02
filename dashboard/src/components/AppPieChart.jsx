@@ -25,20 +25,6 @@ const COLORS = [
     "#f97316",
 ];
 
-function buildAppData(flows) {
-    if (!Array.isArray(flows) || flows.length === 0) return [];
-
-    const map = {};
-    flows.forEach((f) => {
-        if (!map[f.app]) map[f.app] = 0;
-        map[f.app] += f.bytes;
-    });
-
-    return Object.entries(map)
-        .map(([name, value]) => ({ name, value }))
-        .sort((a, b) => b.value - a.value);
-}
-
 const formatBytes = (b) => {
     if (b >= 1_073_741_824) return (b / 1_073_741_824).toFixed(1) + " GB";
     if (b >= 1_048_576) return (b / 1_048_576).toFixed(1) + " MB";
@@ -81,9 +67,16 @@ const renderActiveShape = (props) => {
     );
 };
 
-export default function AppPieChart({ flows }) {
+export default function AppPieChart({ stats }) {
     const [activeIndex, setActiveIndex] = useState(0);
-    const data = buildAppData(flows);
+    
+    // Use pre-aggregated top_apps data from stats
+    const data = stats?.top_apps 
+        ? Object.entries(stats.top_apps)
+            .map(([name, value]) => ({ name, value }))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 8)
+        : [];
 
     return (
         <div className="chart-panel">

@@ -28,7 +28,7 @@ export default function DashboardPage() {
 
             <div className="charts-row">
                 <LiveTrafficChart />
-                <AppPieChart flows={flows} />
+                <AppPieChart stats={stats} />
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
