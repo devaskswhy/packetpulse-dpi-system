@@ -1,8 +1,8 @@
 # PacketPulse DPI System 🚀
 
-A production-grade, event-driven Deep Packet Inspection platform with persistent 
-storage, real-time flow tracking, and intelligent threat detection, built with C++, 
-Python microservices, Apache Kafka, Redis, PostgreSQL, and a live React dashboard.
+A production-grade, fully containerized, event-driven Deep Packet Inspection platform 
+with intelligent threat detection, persistent storage, and a real-time React dashboard — 
+deployable with a single command.
 
 ## 🏗️ Architecture
 
@@ -38,25 +38,71 @@ Python microservices, Apache Kafka, Redis, PostgreSQL, and a live React dashboar
 | Database | PostgreSQL 16 + SQLAlchemy 2.0 (async) + Alembic | Persistent flows, alerts, stats history |
 | Frontend | React + Vite + Recharts | Live dashboard |
 | Cache / Rate Limiter | Redis 7.2 | Active flow cache, rate limiting, stats TTL |
+| Reverse Proxy | nginx:alpine | Static serving, API proxy, WebSocket support |
 | Orchestration | Docker Compose | Local development |
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Windows 10/11 with WSL2 (Ubuntu 24.04)
 - Docker Desktop with WSL2 integration enabled
-- Node.js 20+, Python 3.11+, CMake 4+
+- That's it. Nothing else needed.
 
-### Setup
-1. Clone repo
-2. cd into project
-3. docker compose up -d zookeeper kafka redis postgres
-4. docker compose up -d kafka-init (wait 10s)
-5. cd services/db && alembic upgrade head && cd ../..
-6. python start.py
-7. Open http://localhost:5174
+### One-Command Setup
+```bash
+git clone https://github.com/devaskswhy/packetpulse-dpi-system
+cd packetpulse-dpi-system
+cp .env.example .env        # Edit with your values
+make up
+```
 
-## 📁 Project Structure
+Open **http://localhost** in your browser.
+
+### Makefile Commands
+| Command | Description |
+|---|---|
+| `make up` | Build and start all services |
+| `make down` | Stop all services |
+| `make logs` | Follow all service logs |
+| `make reset` | Full reset (delete volumes + rebuild) |
+
+### Service URLs
+| Service | URL |
+|---|---|
+| Dashboard | http://localhost |
+| API Gateway | http://localhost/api |
+| API Docs | http://localhost/api/docs |
+| Kafka | localhost:9092 |
+| Redis | localhost:6379 |
+| PostgreSQL | localhost:5432 |
+
+## � Docker Architecture
+
+Each service has its own optimized Dockerfile:
+
+| Service | Base Image | Build Strategy |
+|---|---|---|
+| packet_service | ubuntu:22.04 | Multi-stage: compile → copy binary only |
+| processing_service | python:3.11-slim | pip install → copy src |
+| detection_service | python:3.11-slim | includes scikit-learn + saved models |
+| api_gateway | python:3.11-slim | uvicorn with 2 workers |
+| dashboard | node:20-alpine → nginx:alpine | Build React → serve static via nginx |
+
+**nginx** handles:
+- Serves React static files on port 80
+- Proxies `/api/*` → api_gateway:8000
+- WebSocket upgrade headers for `/ws/*` 
+
+### Environment Variables
+Copy `.env.example` to `.env` and configure:
+```env
+KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+REDIS_URL=redis://redis:6379/0
+POSTGRES_URL=postgresql+asyncpg://pp:pp_secret@postgres/packetpulse
+ADMIN_SECRET=change_me_in_production
+API_KEY=your_api_key_here
+```
+
+## �📁 Project Structure
 
 ```text
 Packet_analyzer-main/
@@ -310,8 +356,7 @@ curl http://localhost:8000/rules
 - ✅ Phase 6: Intelligent Detection Engine (Rules + ML)
 - ✅ Phase 7: PostgreSQL Persistent Storage
 - ✅ Phase 8: Production-Grade API Gateway
-- ⏳ Phase 9: Real-time UI Enhancements
-- ⏳ Phase 10: Full Multi-Stage Dockerization
+- ✅ Phase 10: Fully Dockerized (One-Command Setup)
 - ⏳ Phase 11: Kubernetes Deployment (Helm)
 
 
