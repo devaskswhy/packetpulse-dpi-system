@@ -1,7 +1,11 @@
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { useAppStore } from '../store/useAppStore';
 
-const COLORS = ['#22d3ee', '#a78bfa', '#34d399', '#fbbf24', '#fb7185', '#60a5fa', '#f472b6', '#c084fc'];
+const COLORS = [
+  '#22d3ee', '#a78bfa', '#34d399', '#f87171', '#fbbf24',
+  '#60a5fa', '#fb923c', '#e879f9', '#4ade80', '#f43f5e',
+  '#38bdf8', '#818cf8', '#86efac', '#fda4af', '#fcd34d'
+];
 
 export default function AppDistributionChart() {
   const stats = useAppStore(state => state.stats);
@@ -10,7 +14,6 @@ export default function AppDistributionChart() {
     ? Object.entries(stats.top_apps)
         .map(([name, bytes]) => ({ name, value: bytes }))
         .sort((a, b) => b.value - a.value)
-        .slice(0, 8)
     : [];
 
   return (
