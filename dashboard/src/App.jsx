@@ -7,6 +7,7 @@ import CyberCursor from "./components/effects/CyberCursor";
 import NetworkBackground from "./components/effects/NetworkBackground";
 import GlitchText from "./components/effects/GlitchText";
 import AlertToast from "./components/effects/AlertToast";
+import MatrixIntro from "./components/effects/MatrixIntro";
 
 const NAV_ITEMS = [
   { to: "/", icon: "📊", label: "Dashboard" },
@@ -39,6 +40,7 @@ export default function App() {
 
   return (
     <div className="app-layout">
+      <MatrixIntro />
       <CyberCursor />
       <NetworkBackground />
       {/* ---- Sidebar ---- */}
