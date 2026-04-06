@@ -4,6 +4,8 @@ import { useDPI } from "../context/DPIContext";
 export default function AlertsList({ filter = "all" }) {
     const { alerts } = useDPI();
 
+    console.log('AlertsList - alerts data:', alerts);
+
     // Safety fallback for map
     const safeAlerts = Array.isArray(alerts) ? alerts : [];
 

@@ -13,6 +13,9 @@ export default function FlowsPage() {
     const { flows, loading } = useDPI();
     const [activeFilter, setActiveFilter] = useState("All");
 
+    console.log('FlowsPage - flows data:', flows);
+    console.log('FlowsPage - loading:', loading);
+
     if (loading) {
         return (
             <div className="loading-container">
