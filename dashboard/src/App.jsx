@@ -8,7 +8,9 @@ import NetworkBackground from "./components/effects/NetworkBackground";
 import GlitchText from "./components/effects/GlitchText";
 import AlertToast from "./components/effects/AlertToast";
 import MatrixIntro from "./components/effects/MatrixIntro";
+import TypeWriter from "./components/effects/TypeWriter";
 import { motion } from 'framer-motion';
+import { useState, useEffect, useRef } from 'react';
 
 const NAV_ITEMS = [
   { to: "/", icon: "📊", label: "Dashboard" },
@@ -25,7 +27,29 @@ const PAGE_TITLES = {
 export default function App() {
   const location = useLocation();
   const title = PAGE_TITLES[location.pathname] || "Dashboard";
-  const { connectionStatus } = useDPI();
+  
+  console.log('Debug - pathname:', location.pathname);
+  console.log('Debug - title:', title);
+  const { connectionStatus, stats } = useDPI();
+  const [packetsPerSecond, setPacketsPerSecond] = useState(0);
+  const previousPacketsRef = useRef(0);
+  const previousTimeRef = useRef(Date.now());
+
+  // Calculate packets per second
+  useEffect(() => {
+    if (stats && stats.total_packets !== undefined) {
+      const currentTime = Date.now();
+      const timeDiff = (currentTime - previousTimeRef.current) / 1000; // seconds
+      const packetDiff = stats.total_packets - previousPacketsRef.current;
+      
+      if (timeDiff >= 2) { // Update every 2 seconds
+        const pps = Math.round(packetDiff / timeDiff);
+        setPacketsPerSecond(pps);
+        previousPacketsRef.current = stats.total_packets;
+        previousTimeRef.current = currentTime;
+      }
+    }
+  }, [stats]);
 
   const getStatusString = () => {
     if (connectionStatus === "live") return "Engine Online (WS)";
@@ -102,12 +126,50 @@ export default function App() {
 
       {/* ---- Main Area ---- */}
       <div className="main-content" style={{ position: 'relative', zIndex: 1 }}>
-        <header className="topbar">
-          <h2>{title}</h2>
-          <div className="topbar-actions">
+        <header 
+          className="topbar"
+          style={{
+            background: 'rgba(10, 14, 26, 0.8)',
+            backdropFilter: 'blur(20px)',
+            borderBottom: '1px solid rgba(34, 211, 238, 0.1)',
+            background: 'linear-gradient(90deg, rgba(10, 14, 26, 0.8), rgba(34, 211, 238, 0.03), rgba(10, 14, 26, 0.8))'
+          }}
+        >
+          <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '700', letterSpacing: '-0.02em' }}>
+            {/* <TypeWriter key={location.pathname} text={String(title)} /> */}
+            {title}
+          </h2>
+          <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              fontFamily: 'monospace',
+              fontSize: '10px',
+              color: '#64748b',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <span>CPU: --</span>
+              <span style={{ opacity: 0.5 }}>|</span>
+              <span>MEM: --</span>
+              <span style={{ opacity: 0.5 }}>|</span>
+              <span>PKT/s: {packetsPerSecond}</span>
+            </div>
             <div className="live-indicator" style={{ display: connectionStatus === "live" ? "flex" : "none" }}>LIVE</div>
           </div>
         </header>
+        
+        <motion.div
+          key={location.pathname}
+          initial={{ scaleX: 0 }}
+          animate={{ scaleX: 1 }}
+          transition={{ duration: 0.8, ease: 'easeOut' }}
+          style={{
+            height: '2px',
+            background: '#22d3ee',
+            transformOrigin: 'left',
+            width: '100%'
+          }}
+        />
 
         <div className="page-scroll">
           <Routes>
