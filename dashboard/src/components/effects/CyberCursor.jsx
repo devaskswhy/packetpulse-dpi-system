@@ -6,8 +6,8 @@ export default function CyberCursor() {
   const dotX = useMotionValue(0);
   const dotY = useMotionValue(0);
   
-  // ring follows with spring lag
-  const springConfig = { damping: 25, stiffness: 200 };
+  // ring follows with spring lag - OPTIMIZED
+  const springConfig = { damping: 30, stiffness: 150 };
   const ringX = useSpring(dotX, springConfig);
   const ringY = useSpring(dotY, springConfig);
   
@@ -60,6 +60,13 @@ export default function CyberCursor() {
           y: '-50%',
           zIndex: 9999,
           pointerEvents: 'none',
+          width: 40,
+          height: 40,
+          borderRadius: '50%',
+          border: '2px solid',
+          borderColor: clicked ? '#ffffff' : '#22d3ee',
+          scale: clicked ? 1.5 : 1,
+          willChange: 'transform',
         }}
         animate={{
           width: clicked ? 64 : hovered ? 48 : 32,
@@ -67,8 +74,6 @@ export default function CyberCursor() {
           backgroundColor: hovered 
             ? 'rgba(34,211,238,0.1)' 
             : 'transparent',
-          borderColor: clicked ? '#ffffff' : '#22d3ee',
-          scale: clicked ? 1.5 : 1,
         }}
         transition={{ duration: 0.15 }}
         className="rounded-full border border-cyan-400"
@@ -88,6 +93,7 @@ export default function CyberCursor() {
           height: 8,
           borderRadius: '50%',
           backgroundColor: hovered ? '#ffffff' : '#22d3ee',
+          willChange: 'transform',
         }}
         animate={{ scale: clicked ? 0.5 : 1 }}
         transition={{ duration: 0.1 }}

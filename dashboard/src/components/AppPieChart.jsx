@@ -3,7 +3,7 @@
  * Uses Recharts PieChart with custom active-shape rendering.
  */
 
-import { useState } from "react";
+import React, { useState, memo } from "react";
 import {
     PieChart,
     Pie,
@@ -67,7 +67,7 @@ const renderActiveShape = (props) => {
     );
 };
 
-export default function AppPieChart({ stats }) {
+function AppPieChart({ stats }) {
     const [activeIndex, setActiveIndex] = useState(0);
     
     // Use pre-aggregated top_apps data from stats
@@ -79,22 +79,22 @@ export default function AppPieChart({ stats }) {
         : [];
 
     return (
-        <div className="chart-panel">
-            <div className="panel-header">
+        <div style={{ width: '100%', height: 280 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', marginTop: '-8px' }}>
                 <div>
-                    <div className="panel-title">Traffic by App</div>
-                    <div className="panel-subtitle">Bytes per application</div>
+                    <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#e2e8f0' }}>Traffic by App</div>
+                    <div style={{ fontSize: '12px', color: '#94a3b8' }}>Bytes per application</div>
                 </div>
             </div>
 
-            <ResponsiveContainer width="100%" height={260}>
+            <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                     <Pie
                         data={data}
                         cx="50%"
                         cy="50%"
                         innerRadius={65}
-                        outerRadius={90}
+                        outerRadius={80}
                         dataKey="value"
                         activeIndex={activeIndex}
                         activeShape={renderActiveShape}
@@ -150,3 +150,5 @@ export default function AppPieChart({ stats }) {
         </div>
     );
 }
+
+export default memo(AppPieChart);

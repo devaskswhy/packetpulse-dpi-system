@@ -53,10 +53,10 @@ export default function FlowsPage() {
     }
   };
 
-  // Auto-refresh every 10 seconds
+  // Auto-refresh every 15 seconds (reduced from 10s)
   useEffect(() => {
     fetchFlows();
-    const interval = setInterval(fetchFlows, 10000);
+    const interval = setInterval(fetchFlows, 15000);
     return () => clearInterval(interval);
   }, []);
 
@@ -311,14 +311,10 @@ export default function FlowsPage() {
       )}
 
       {/* Flow Table */}
-      <AnimatePresence>
+      <div style={{ marginBottom: "20px" }}>
         {filteredFlows.map((flow, index) => (
-          <motion.div
+          <div
             key={`${flow.flow_id || index}-${lastSync.getTime()}`}
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, x: -100 }}
-            transition={{ duration: 0.3, delay: index * 0.05 }}
             style={{
               background: flow.blocked ? "rgba(239, 68, 68, 0.05)" : "rgba(0, 0, 0, 0.3)",
               borderLeft: flow.blocked ? "3px solid #ef4444" : "3px solid transparent",
@@ -331,11 +327,15 @@ export default function FlowsPage() {
               alignItems: "center",
               fontSize: "12px",
               cursor: "pointer",
-              transition: "all 0.2s"
+              transition: "all 0.2s ease"
             }}
-            whileHover={{
-              borderLeftColor: "#22d3ee",
-              background: "rgba(34, 211, 238, 0.05)"
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderLeftColor = "#22d3ee";
+              e.currentTarget.style.background = "rgba(34, 211, 238, 0.05)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderLeftColor = flow.blocked ? "#ef4444" : "transparent";
+              e.currentTarget.style.background = flow.blocked ? "rgba(239, 68, 68, 0.05)" : "rgba(0, 0, 0, 0.3)";
             }}
           >
             {/* # */}
@@ -429,9 +429,9 @@ export default function FlowsPage() {
                 </span>
               )}
             </div>
-          </motion.div>
+          </div>
         ))}
-      </AnimatePresence>
+      </div>
 
       {/* Stats Bar */}
       {filteredFlows.length > 0 && (

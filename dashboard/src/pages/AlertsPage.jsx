@@ -62,10 +62,10 @@ export default function AlertsPage() {
     }
   };
 
-  // Auto-refresh every 5 seconds
+  // Auto-refresh every 8 seconds (reduced from 5s)
   useEffect(() => {
     fetchAlerts();
-    const interval = setInterval(fetchAlerts, 5000);
+    const interval = setInterval(fetchAlerts, 8000);
     return () => clearInterval(interval);
   }, []);
 

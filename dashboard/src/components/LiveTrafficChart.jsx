@@ -1,20 +1,22 @@
+import React, { memo } from 'react';
 import { useEffect, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useDPI } from '../context/DPIContext';
 
-export default function LiveTrafficChart() {
-  const { chartData } = useDPI();
+function LiveTrafficChart({ chartData }) {
+  const { chartData: contextChartData } = useDPI();
+  const data = chartData || contextChartData;
 
   return (
-    <div className="bg-[#111827] border border-[#1e293b] rounded-xl p-4 md:p-6 w-full h-[400px]">
-      <div className="flex justify-between mb-2 -mt-2">
+    <div style={{ width: '100%', height: 280 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', marginTop: '-8px' }}>
         <div>
-          <h3 className="text-xs font-bold text-[#e2e8f0]">Live Traffic</h3>
-          <p className="text-xs text-[#94a3b8]">Real-time bytes and packets per second</p>
+          <h3 style={{ fontSize: '12px', fontWeight: 'bold', color: '#e2e8f0' }}>Live Traffic</h3>
+          <p style={{ fontSize: '12px', color: '#94a3b8' }}>Real-time bytes and packets per second</p>
         </div>
       </div>
-      <ResponsiveContainer width="100%" height="85%" style={{marginTop: '12px'}}>
-        <AreaChart data={chartData}>
+      <ResponsiveContainer width="100%" height={220}>
+        <AreaChart data={data}>
           <defs>
             <linearGradient id="colorBytes" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.3} />
@@ -40,3 +42,5 @@ export default function LiveTrafficChart() {
     </div>
   );
 }
+
+export default memo(LiveTrafficChart);

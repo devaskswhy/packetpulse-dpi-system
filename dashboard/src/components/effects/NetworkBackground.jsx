@@ -22,8 +22,8 @@ export default function NetworkBackground() {
       mouse.y = e.clientY;
     });
     
-    // Create particles
-    const particles = Array.from({ length: 80 }, () => ({
+    // Create particles - REDUCED from 80 to 40
+    const particles = Array.from({ length: 40 }, () => ({
       x: Math.random() * canvas.width,
       y: Math.random() * canvas.height,
       vx: (Math.random() - 0.5) * 0.4,
@@ -66,17 +66,21 @@ export default function NetworkBackground() {
         ctx.fill();
       });
       
-      // Draw connections
+      // Draw connections - OPTIMIZED
       for (let i = 0; i < particles.length; i++) {
         for (let j = i + 1; j < particles.length; j++) {
+          // Skip 70% of connection checks for performance
+          if (Math.random() > 0.3) continue;
+          
           const dx = particles[i].x - particles[j].x;
           const dy = particles[i].y - particles[j].y;
           const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 120) {
+          // Reduced distance from 120 to 80px
+          if (dist < 80) {
             ctx.beginPath();
             ctx.moveTo(particles[i].x, particles[i].y);
             ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.strokeStyle = `rgba(34, 211, 238, ${0.15 * (1 - dist/120)})`;
+            ctx.strokeStyle = `rgba(34, 211, 238, ${0.15 * (1 - dist/80)})`;
             ctx.lineWidth = 0.5;
             ctx.stroke();
           }

@@ -92,9 +92,9 @@ export function DPIProvider({ children }) {
             }
         };
         
-        // Poll immediately then every 2 seconds
+        // Poll immediately then every 3 seconds (reduced from 2s)
         poll();
-        const interval = setInterval(poll, 2000);
+        const interval = setInterval(poll, 3000);
         return () => clearInterval(interval);
     }, []);
 

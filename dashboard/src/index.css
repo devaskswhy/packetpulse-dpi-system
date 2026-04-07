@@ -156,8 +156,8 @@ a {
 }
 
 @keyframes borderFlow {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(20px); }
+  0%, 100% { transform: translateY(0); will-change: transform; transform: translateZ(0); }
+  50% { transform: translateY(20px); will-change: transform; transform: translateZ(0); }
 }
 
 .sidebar-brand {
@@ -300,9 +300,11 @@ a {
 @keyframes livePulse {
   0%, 100% { 
     box-shadow: 0 0 0 0 rgba(34,211,238,0.4); 
+    will-change: transform; transform: translateZ(0);
   }
   50% { 
-    box-shadow: 0 0 0 8px rgba(34,211,238,0); 
+    box-shadow: 0 0 0 8px rgba(34,211,238,0);
+    will-change: transform; transform: translateZ(0);
   }
 }
 
@@ -316,7 +318,7 @@ a {
   padding: 0 32px;
   flex-shrink: 0;
   background: rgba(10, 14, 26, 0.8);
-  backdrop-filter: blur(12px);
+  /* backdrop-filter: blur(12px); REMOVED for performance */
 }
 
 .topbar h2 {
@@ -765,6 +767,7 @@ a {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+    will-change: transform; transform: translateZ(0);
   }
 }
 
@@ -815,7 +818,7 @@ a {
 .cyber-card {
   position: relative;
   background: rgba(15, 17, 23, 0.8);
-  backdrop-filter: blur(10px);
+  /* backdrop-filter: blur(10px); REMOVED for performance */
   border: 1px solid transparent;
   background-clip: padding-box;
 }
@@ -853,10 +856,10 @@ a {
 }
 
 @keyframes scanline {
-  0% { transform: translateY(0); opacity: 0; }
-  5% { opacity: 1; }
-  95% { opacity: 1; }
-  100% { transform: translateY(200px); opacity: 0; }
+  0% { transform: translateY(0); opacity: 0; will-change: transform; transform: translateZ(0); }
+  5% { opacity: 1; will-change: transform; transform: translateZ(0); }
+  95% { opacity: 1; will-change: transform; transform: translateZ(0); }
+  100% { transform: translateY(20px); opacity: 0; will-change: transform; transform: translateZ(0); }
 }
 
 .cyber-card .corner {
