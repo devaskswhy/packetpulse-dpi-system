@@ -7,9 +7,9 @@ export function useCountUp(target, duration = 600) {
 
   useEffect(() => {
     // Skip animation if difference is tiny
-    if (Math.abs(target - prev.current) < 2) {
-      setCount(target);
-      prev.current = target;
+    if (!target || Math.abs(target - prev.current) < 5) {
+      setCount(target || 0);
+      prev.current = target || 0;
       return;
     }
 

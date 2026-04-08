@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import { useDPI } from "../context/DPIContext";
 import { useCountUp } from "../hooks/useCountUp";
 import { Link } from "react-router-dom";
-import { useMemo, useCallback } from "react";
+import { useMemo, useCallback, useState, useEffect } from "react";
 
 import StatsCards from "../components/StatsCards";
 import LiveTrafficChart from "../components/LiveTrafficChart";
@@ -16,17 +16,46 @@ import FlowsTable from "../components/FlowsTable";
 
 export default function DashboardPage() {
     const { stats, flows, alerts, chartData, loading } = useDPI();
+    const [localFlows, setLocalFlows] = useState([]);
+
+    // Fetch flows independently with auth
+    useEffect(() => {
+        const fetchFlows = async () => {
+            try {
+                const res = await fetch('http://localhost:8000/flows?limit=5', {
+                    headers: { 'X-API-Key': 'dev_key_12345' }
+                });
+                const data = await res.json();
+                const flowList = Array.isArray(data) ? data : (data.data ?? []);
+                setLocalFlows(flowList);
+            } catch (e) {
+                console.error("Failed to fetch flows:", e);
+            }
+        };
+        fetchFlows();
+        const interval = setInterval(fetchFlows, 15000);
+        return () => clearInterval(interval);
+    }, []);
+
+    // Debounce stats display to prevent rapid re-renders
+    const [displayStats, setDisplayStats] = useState({
+        total_packets: 0, total_traffic: 0, blocked_threats: 0, top_apps: {}
+    });
+    useEffect(() => {
+        const t = setTimeout(() => setDisplayStats(stats || {}), 200);
+        return () => clearTimeout(t);
+    }, [stats]);
 
     // Memoized data to prevent unnecessary re-renders
     const topApp = useMemo(() => 
-      Object.keys(stats?.top_apps || {})[0] || 'Unknown',
-      [stats?.top_apps]
+      Object.keys(displayStats?.top_apps || {})[0] || 'Unknown',
+      [displayStats?.top_apps]
     );
 
     const pieData = useMemo(() => 
-      Object.entries(stats?.top_apps || {})
+      Object.entries(displayStats?.top_apps || {})
         .map(([name, value]) => ({ name, value })),
-      [stats?.top_apps]
+      [displayStats?.top_apps]
     );
 
     // Memoize recent alerts
@@ -36,9 +65,9 @@ export default function DashboardPage() {
     );
 
     // Animated counters for stat cards
-    const animatedPackets = useCountUp(stats?.total_packets ?? 0);
-    const animatedTraffic = useCountUp(Math.round((stats?.total_traffic ?? 0) / 1024 / 1024)); // Convert to MB
-    const animatedThreats = useCountUp(stats?.blocked_threats ?? 0);
+    const animatedPackets = useCountUp(displayStats?.total_packets ?? 0);
+    const animatedTraffic = useCountUp(Math.round((displayStats?.total_traffic ?? 0) / 1024 / 1024)); // Convert to MB
+    const animatedThreats = useCountUp(displayStats?.blocked_threats ?? 0);
 
     // Format time ago
     const getTimeAgo = (timestamp) => {
@@ -95,25 +124,24 @@ export default function DashboardPage() {
                     radial-gradient(circle at 20% 50%, rgba(34, 211, 238, 0.02) 0%, transparent 50%),
                     radial-gradient(circle at 80% 80%, rgba(34, 211, 238, 0.02) 0%, transparent 50%),
                     radial-gradient(circle at 40% 20%, rgba(34, 211, 238, 0.02) 0%, transparent 50%)
-                `,
-                animation: 'flowingBackground 20s ease-in-out infinite'
+                `
             }}
         >
             {/* Enhanced Stats Cards with staggered entrance */}
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.6, delay: 0.1 }}
+            <div
+                style={{
+                    opacity: 1
+                }}
             >
                 <StatsCards 
                     stats={{
-                        ...stats,
+                        ...displayStats,
                         total_packets: animatedPackets,
                         total_traffic: animatedTraffic * 1024 * 1024, // Convert back to bytes
                         blocked_threats: animatedThreats
                     }} 
                 />
-            </motion.div>
+            </div>
 
             {/* Enhanced Charts Row */}
             <motion.div
@@ -124,11 +152,8 @@ export default function DashboardPage() {
                 style={{ position: 'relative' }}
             >
                 {/* Live Traffic Chart with enhancements */}
-                <motion.div
+                <div
                     className="lg:col-span-2"
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.6, delay: 0.3 }}
                     style={{ position: 'relative', zIndex: 1, height: '320px' }}
                 >
                     <div style={{
@@ -146,8 +171,7 @@ export default function DashboardPage() {
                             padding: '2px 6px',
                             borderRadius: '2px',
                             fontSize: '10px',
-                            fontWeight: '600',
-                            animation: 'pulse 2s ease-in-out infinite'
+                            fontWeight: '600'
                         }}>
                             LIVE
                         </span>
@@ -161,18 +185,15 @@ export default function DashboardPage() {
                     </div>
                     
                     <LiveTrafficChart chartData={chartData} />
-                </motion.div>
+                </div>
 
                 {/* App Distribution Chart */}
-                <motion.div
+                <div
                     className="lg:col-span-1"
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.6, delay: 0.4 }}
                     style={{ height: '320px' }}
                 >
                     <AppPieChart stats={stats} />
-                </motion.div>
+                </div>
             </motion.div>
 
             {/* TOP THREATS SUMMARY Section */}
@@ -221,11 +242,8 @@ export default function DashboardPage() {
                 {recentAlerts && recentAlerts.length > 0 ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {recentAlerts.map((alert, index) => (
-                            <motion.div
+                            <div
                                 key={alert.ts || index}
-                                initial={{ opacity: 0, x: -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ duration: 0.3, delay: 0.6 + index * 0.1 }}
                                 style={{
                                     display: 'flex',
                                     alignItems: 'center',
@@ -254,7 +272,7 @@ export default function DashboardPage() {
                                 <span style={{ color: '#64748b', fontSize: '11px' }}>
                                     {getTimeAgo(alert.ts)}
                                 </span>
-                            </motion.div>
+                            </div>
                         ))}
                     </div>
                 ) : (
@@ -298,11 +316,8 @@ export default function DashboardPage() {
                     gap: '12px'
                 }}>
                     {systemStatus.map((service, index) => (
-                        <motion.div
+                        <div
                             key={service.name}
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            transition={{ duration: 0.3, delay: 0.8 + index * 0.1 }}
                             style={{
                                 background: 'rgba(0,0,0,0.3)',
                                 border: '1px solid rgba(255,255,255,0.05)',
@@ -321,7 +336,6 @@ export default function DashboardPage() {
                                     height: '6px',
                                     borderRadius: '50%',
                                     background: service.color,
-                                    animation: 'pulse 2s ease-in-out infinite',
                                     flexShrink: 0
                                 }}
                             />
@@ -333,7 +347,7 @@ export default function DashboardPage() {
                             }}>
                                 {service.status}
                             </span>
-                        </motion.div>
+                        </div>
                     ))}
                 </div>
             </motion.div>
@@ -345,31 +359,9 @@ export default function DashboardPage() {
                 transition={{ duration: 0.6, delay: 0.9 }}
                 style={{ display: "flex", flexDirection: "column", gap: 20 }}
             >
-                <FlowsTable flows={flows || []} compact />
+                <FlowsTable flows={localFlows || []} compact />
             </motion.div>
 
-            {/* CSS Animations */}
-            <style jsx>{`
-                @keyframes flowingBackground {
-                    0%, 100% {
-                        background-position: 0% 50%, 100% 50%, 50% 0%;
-                    }
-                    25% {
-                        background-position: 100% 50%, 0% 100%, 100% 0%;
-                    }
-                    50% {
-                        background-position: 100% 100%, 0% 0%, 0% 100%;
-                    }
-                    75% {
-                        background-position: 0% 100%, 100% 0%, 0% 0%;
-                    }
-                }
-                
-                @keyframes pulse {
-                    0%, 100% { opacity: 1; }
-                    50% { opacity: 0.5; }
-                }
-            `}</style>
-        </motion.div>
+            </motion.div>
     );
 }

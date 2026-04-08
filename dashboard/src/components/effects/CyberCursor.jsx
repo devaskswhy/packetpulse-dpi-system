@@ -7,7 +7,7 @@ export default function CyberCursor() {
   const dotY = useMotionValue(0);
   
   // ring follows with spring lag - OPTIMIZED
-  const springConfig = { damping: 30, stiffness: 150 };
+  const springConfig = { damping: 40, stiffness: 120, mass: 0.5 };
   const ringX = useSpring(dotX, springConfig);
   const ringY = useSpring(dotY, springConfig);
   

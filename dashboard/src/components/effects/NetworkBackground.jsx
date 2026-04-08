@@ -22,8 +22,8 @@ export default function NetworkBackground() {
       mouse.y = e.clientY;
     });
     
-    // Create particles - REDUCED from 80 to 40
-    const particles = Array.from({ length: 40 }, () => ({
+    // Create particles - REDUCED to 35
+    const particles = Array.from({ length: 35 }, () => ({
       x: Math.random() * canvas.width,
       y: Math.random() * canvas.height,
       vx: (Math.random() - 0.5) * 0.4,
@@ -32,9 +32,13 @@ export default function NetworkBackground() {
       opacity: Math.random() * 0.3 + 0.2,
     }));
     
+    let frame = 0;
+    
     const animate = () => {
+      frame++;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
+      // Always move particles
       particles.forEach(p => {
         // Mouse repulsion
         const dx = p.x - mouse.x;
@@ -66,23 +70,24 @@ export default function NetworkBackground() {
         ctx.fill();
       });
       
-      // Draw connections - OPTIMIZED
-      for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          // Skip 70% of connection checks for performance
-          if (Math.random() > 0.3) continue;
-          
-          const dx = particles[i].x - particles[j].x;
-          const dy = particles[i].y - particles[j].y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          // Reduced distance from 120 to 80px
-          if (dist < 80) {
-            ctx.beginPath();
-            ctx.moveTo(particles[i].x, particles[i].y);
-            ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.strokeStyle = `rgba(34, 211, 238, ${0.15 * (1 - dist/80)})`;
-            ctx.lineWidth = 0.5;
-            ctx.stroke();
+      // Draw connections only every 3rd frame
+      if (frame % 3 === 0) {
+        for (let i = 0; i < particles.length; i++) {
+          for (let j = i + 1; j < particles.length; j++) {
+            // Skip 70% of connection checks for performance
+            if (Math.random() > 0.3) continue;
+            
+            const dx = particles[i].x - particles[j].x;
+            const dy = particles[i].y - particles[j].y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 80) {
+              ctx.beginPath();
+              ctx.moveTo(particles[i].x, particles[i].y);
+              ctx.lineTo(particles[j].x, particles[j].y);
+              ctx.strokeStyle = `rgba(34, 211, 238, ${0.1 * (1 - dist/80)})`;
+              ctx.lineWidth = 0.5;
+              ctx.stroke();
+            }
           }
         }
       }

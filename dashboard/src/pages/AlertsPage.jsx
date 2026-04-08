@@ -99,6 +99,7 @@ export default function AlertsPage() {
   const formatTime = (timestamp) => {
     if (!timestamp) return "Unknown";
     const date = new Date(timestamp);
+    
     return date.toLocaleTimeString('en-US', { 
       hour12: false, 
       hour: '2-digit', 
