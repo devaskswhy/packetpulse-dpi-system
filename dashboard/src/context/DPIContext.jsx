@@ -34,7 +34,7 @@ export function DPIProvider({ children }) {
         
         setChartData(prev => {
             const updated = [...prev, newPoint];
-            return updated.slice(-60); // Keep last 60 points only
+            return updated.slice(-30); // Keep last 30 points only
         });
     };
 

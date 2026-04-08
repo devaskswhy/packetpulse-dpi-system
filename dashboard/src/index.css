@@ -156,8 +156,8 @@ a {
 }
 
 @keyframes borderFlow {
-  0%, 100% { transform: translateY(0); will-change: transform; transform: translateZ(0); }
-  50% { transform: translateY(20px); will-change: transform; transform: translateZ(0); }
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(20px); }
 }
 
 .sidebar-brand {
@@ -300,11 +300,9 @@ a {
 @keyframes livePulse {
   0%, 100% { 
     box-shadow: 0 0 0 0 rgba(34,211,238,0.4); 
-    will-change: transform; transform: translateZ(0);
   }
   50% { 
     box-shadow: 0 0 0 8px rgba(34,211,238,0);
-    will-change: transform; transform: translateZ(0);
   }
 }
 
@@ -767,7 +765,6 @@ a {
 @keyframes spin {
   to {
     transform: rotate(360deg);
-    will-change: transform; transform: translateZ(0);
   }
 }
 
@@ -821,6 +818,7 @@ a {
   /* backdrop-filter: blur(10px); REMOVED for performance */
   border: 1px solid transparent;
   background-clip: padding-box;
+  will-change: auto; /* NOT transform — auto releases GPU memory */
 }
 
 .cyber-card::before {
@@ -856,10 +854,10 @@ a {
 }
 
 @keyframes scanline {
-  0% { transform: translateY(0); opacity: 0; will-change: transform; transform: translateZ(0); }
-  5% { opacity: 1; will-change: transform; transform: translateZ(0); }
-  95% { opacity: 1; will-change: transform; transform: translateZ(0); }
-  100% { transform: translateY(20px); opacity: 0; will-change: transform; transform: translateZ(0); }
+  0% { transform: translateY(0); opacity: 0; }
+  5% { opacity: 1; }
+  95% { opacity: 1; }
+  100% { transform: translateY(20px); opacity: 0; }
 }
 
 .cyber-card .corner {
