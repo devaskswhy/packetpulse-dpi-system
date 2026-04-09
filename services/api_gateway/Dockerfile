@@ -13,6 +13,5 @@ RUN useradd -m -u 1000 apiuser && chown -R apiuser:apiuser /app
 USER apiuser
 
 ENV PYTHONPATH=/app
-ENV PORT=8000
 
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
