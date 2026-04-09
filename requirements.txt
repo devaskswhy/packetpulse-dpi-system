@@ -1,2 +1,2 @@
-# PacketPulse Kafka Debug Consumer dependencies
-confluent-kafka==2.3.0
+# PacketPulse root dependencies
+# Note: Service-specific deps are in services/api_gateway/requirements.txt
